@@ -1,0 +1,49 @@
+services:
+  postgres-primary:
+    image: bitnami/postgresql:latest
+    container_name: omniai-postgres-primary
+    restart: unless-stopped
+    environment:
+      POSTGRESQL_REPLICATION_MODE: master
+      POSTGRESQL_REPLICATION_USER: ${POSTGRES_REPLICATION_USER}
+      POSTGRESQL_REPLICATION_PASSWORD: ${POSTGRES_REPLICATION_PASSWORD}
+      POSTGRESQL_USERNAME: ${POSTGRES_USER}
+      POSTGRESQL_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRESQL_DATABASE: ${POSTGRES_DB}
+    ports:
+      - "${POSTGRES_PRIMARY_PORT}:5432"
+    volumes:
+      - postgres_primary_data:/bitnami/postgresql
+
+  postgres-replica:
+    image: bitnami/postgresql:latest
+    container_name: omniai-postgres-replica
+    restart: unless-stopped
+    depends_on:
+      - postgres-primary
+    environment:
+      POSTGRESQL_REPLICATION_MODE: slave
+      POSTGRESQL_REPLICATION_USER: ${POSTGRES_REPLICATION_USER}
+      POSTGRESQL_REPLICATION_PASSWORD: ${POSTGRES_REPLICATION_PASSWORD}
+      POSTGRESQL_MASTER_HOST: postgres-primary
+      POSTGRESQL_MASTER_PORT_NUMBER: 5432
+      POSTGRESQL_PASSWORD: ${POSTGRES_PASSWORD}
+    ports:
+      - "${POSTGRES_REPLICA_PORT}:5432"
+    volumes:
+      - postgres_replica_data:/bitnami/postgresql
+
+  redis:
+    image: redis:7-alpine
+    container_name: omniai-redis
+    restart: unless-stopped
+    command: ["redis-server", "--appendonly", "yes"]
+    ports:
+      - "${REDIS_PORT}:6379"
+    volumes:
+      - redis_data:/data
+
+volumes:
+  postgres_primary_data:
+  postgres_replica_data:
+  redis_data:

@@ -1,0 +1,20 @@
+# .NET
+bin/
+obj/
+*.user
+.vs/
+
+# Node
+node_modules/
+dist/
+build/
+
+# Segredos locais
+.env
+!.env.example
+
+# Editor / SO
+.idea/
+*.swp
+Thumbs.db
+.DS_Store

@@ -1,0 +1,35 @@
+{
+  "name": "omniai-sdk",
+  "version": "0.1.0",
+  "description": "SDK Node.js/TypeScript do OmniAI — instrumenta chamadas a provedores de IA e envia métricas de uso ao Webhook.",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsc --watch"
+  },
+  "keywords": [
+    "ai",
+    "observability",
+    "llm",
+    "cost"
+  ],
+  "license": "MIT",
+  "devDependencies": {
+    "typescript": "^5.9.3",
+    "@types/node": "^24.0.0"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}
