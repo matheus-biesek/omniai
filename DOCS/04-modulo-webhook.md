@@ -15,7 +15,7 @@ A requisição passa pelas etapas abaixo, nesta ordem. Se qualquer etapa falhar,
 
 1. **Rate limit por IP** — middleware nativo do ASP.NET Core (`Microsoft.AspNetCore.RateLimiting`), limitando quantas requisições um mesmo IP pode fazer por janela de tempo. Protege contra abuso e ataques de força bruta na API Key.
 2. **Autenticação da API Key** — ver [Autenticação](#autenticação-por-api-key) abaixo.
-3. **Validação do payload** — os campos descritos em [03-modulo-sdk.md](03-modulo-sdk.md#payload-enviado-ao-webhook) são obrigatórios e validados quanto a tipo/formato (ex: `costUsd` não pode ser negativo, `provider` precisa ser um valor conhecido).
+3. **Validação do payload** — os campos descritos em [03-modulo-sdk.md](03-modulo-sdk.md#payload-enviado-ao-webhook) são obrigatórios e validados quanto a tipo/formato (ex: `costUsd` não pode ser negativo quando presente, `provider` precisa ser um valor conhecido).
 4. **Verificação de backpressure da fila** — ver [Backpressure da fila](#backpressure-da-fila) abaixo.
 5. **Publicação no Redis Stream** — o evento é serializado e publicado via `XADD`. O Webhook responde `202 Accepted` ao SDK assim que a publicação é confirmada.
 

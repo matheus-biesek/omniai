@@ -36,8 +36,21 @@ proex/                        # raiz do monorepo
 
 `Shared` é a exceção à regra acima: é uma biblioteca de classes (não um serviço executável) referenciada por Webhook, Consumer e API GraphQL, contendo o que os três genuinamente compartilham:
 
+```
+Shared/
+├── Entities/            # Project, ApiKey, UsageRecord
+├── Data/
+│   ├── Configurations/   # mapeamento EF Core (IEntityTypeConfiguration) de cada entidade
+│   ├── WriteDbContext.cs
+│   ├── ReadDbContext.cs
+│   ├── WriteDbContextFactory.cs   # IDesignTimeDbContextFactory, só para `dotnet ef migrations`
+│   └── Migrations/       # geradas via `dotnet ef migrations add`, ligadas só ao WriteDbContext
+└── Messaging/
+    └── UsageEventMessage.cs   # contrato do payload publicado no Redis Stream (inclui costUsd, calculado pelo SDK)
+```
+
 - **Entidades e DbContexts do EF Core** — `Project`, `ApiKey`, `UsageRecord`, além de `WriteDbContext` e `ReadDbContext` (ver [08-banco-de-dados.md](08-banco-de-dados.md#como-a-aplicação-usa-os-dois-bancos)) e as migrations, que vivem exclusivamente aqui.
-- **Contrato do evento da fila** — o DTO que representa o payload publicado no Redis Stream, usado pelo Webhook (produtor) e pelo Consumer (consumidor), evitando que os dois definam essa forma de dado de forma independente e ela divirja com o tempo.
+- **Contrato do evento da fila** — o DTO que representa o payload publicado no Redis Stream, usado pelo Webhook (produtor) e pelo Consumer (consumidor), evitando que os dois definam essa forma de dado de forma independente e ela divirja com o tempo. Inclui `costUsd` — calculado pelo SDK, não pelo backend (ver [03-modulo-sdk.md](03-modulo-sdk.md)).
 
 | Projeto | Referencia `Shared` para |
 |---|---|
@@ -46,6 +59,21 @@ proex/                        # raiz do monorepo
 | ApiGraphQL | `ReadDbContext` (query `usageStatistics`) |
 
 Isso não contradiz a regra de independência entre serviços: nenhum dos três depende do código de **outro serviço**, todos dependem apenas de uma biblioteca comum que nenhum deles "roda" sozinha — um shared kernel, não um acoplamento serviço-a-serviço.
+
+### Gerando e aplicando migrations
+
+Migrations são geradas e aplicadas a partir da pasta `Shared/`, sempre contra `WriteDbContext` (nunca contra `ReadDbContext` — ver [08-banco-de-dados.md](08-banco-de-dados.md#como-a-replicação-é-feita)):
+
+```bash
+cd OmniAI/Shared
+dotnet ef migrations add NomeDaMigration --context WriteDbContext
+
+# aplica na infra local (ver 12-ambiente-local.md) — requer o compose de pé
+OMNIAI_WRITE_CONNECTION_STRING="Host=localhost;Port=5432;Database=omniai;Username=omniai;Password=omniai_dev_password" \
+  dotnet ef database update --context WriteDbContext
+```
+
+`Shared` tem uma `WriteDbContextFactory` (`IDesignTimeDbContextFactory<WriteDbContext>`) só para permitir rodar esses comandos a partir de uma class library, sem depender de nenhum dos serviços executáveis. `OMNIAI_WRITE_CONNECTION_STRING` cai num valor padrão (mesmas credenciais do `.env.example`) se a variável não for definida — suficiente para `migrations add` (que não conecta a um banco real), mas para `database update` a infra local precisa estar de pé.
 
 ## Como os projetos C# foram criados
 

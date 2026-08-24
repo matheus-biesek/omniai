@@ -19,8 +19,8 @@ O Consumer lê o Redis Stream através de um **consumer group** (`XREADGROUP`), 
 ## Fluxo de processamento de cada evento
 
 1. Ler o próximo evento pendente do Stream (via consumer group).
-2. Validar e desserializar o payload.
-3. Persistir o evento como um registro de uso (`UsageRecord`) no Postgres de **escrita**.
+2. Validar e desserializar o payload (`UsageEventMessage`, ver [10-estrutura-repositorio.md](10-estrutura-repositorio.md#biblioteca-compartilhada)).
+3. Persistir o evento como um registro de uso (`UsageRecord`) no Postgres de **escrita** — `costUsd` é gravado exatamente como veio do SDK (ver [03-modulo-sdk.md](03-modulo-sdk.md)), o Consumer não recalcula nada.
 4. Publicar o evento recém-persistido no **SignalR Hub**, para que o dashboard conectado receba a atualização em tempo real.
 5. Confirmar o processamento (`XACK`) junto ao Redis.
 

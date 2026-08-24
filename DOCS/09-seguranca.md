@@ -26,7 +26,7 @@ Duas camadas independentes, ambas no Webhook:
 
 Toda borda do sistema que recebe dado externo valida antes de processar:
 
-- **Webhook:** valida schema do payload (tipos, campos obrigatórios, valores permitidos como `provider` conhecido, `costUsd` não-negativo) antes de publicar na fila.
+- **Webhook:** valida schema do payload (tipos, campos obrigatórios, valores permitidos como `provider` conhecido, `costUsd`/tokens não-negativos) antes de publicar na fila.
 - **API GraphQL:** validação de tipos é garantida pelo próprio schema GraphQL; regras de negócio adicionais (ex: intervalo de datas do filtro) são validadas no Use Case correspondente.
 
 ## Autenticação do Dashboard (login)

@@ -32,9 +32,11 @@ const result = await omniai.call({
 2. **Delega a chamada real** ao SDK oficial do provedor (ex: SDK da OpenAI).
 3. **Marca o fim** da chamada e calcula a latência.
 4. **Extrai tokens** da resposta do provedor (prompt tokens, completion tokens, total).
-5. **Calcula o custo estimado** com base em uma tabela de preços por provedor/modelo mantida no próprio SDK.
+5. **Calcula o custo estimado** com base em uma tabela de preços por provedor/modelo mantida no próprio SDK. Nenhum provedor retorna preço na resposta da chamada — só contagem de tokens — então essa tabela é o SDK que carrega. Se o modelo não estiver catalogado, `costUsd` é enviado como `null` em vez de `0`, para não confundir "sem custo" com "preço desconhecido".
 6. **Envia a métrica ao Webhook** de forma assíncrona e "fire-and-forget": o envio não bloqueia nem pode falhar a chamada original da aplicação. Se o envio falhar (timeout, Webhook fora do ar), o erro é apenas logado — nunca propagado para quem chamou `omniai.call`.
 7. **Retorna a resposta original** do provedor à aplicação chamadora, no passo 2.
+
+**Por que calcular no SDK e não no backend:** manter o cálculo junto de quem já tem os tokens na mão deixa transparente, pra quem usa o SDK, exatamente como o dado de custo é produzido — sem uma etapa "invisível" acontecendo no backend depois que o evento já saiu da aplicação. O trade-off aceito é que a tabela de preços precisa ser atualizada via nova versão do pacote quando um provedor muda preços (ver [Princípios de design do SDK](#princípios-de-design-do-sdk) abaixo).
 
 ## Payload enviado ao Webhook
 
@@ -44,7 +46,7 @@ const result = await omniai.call({
 | `provider` | Provedor de IA usado (ex: `openai`, `anthropic`). |
 | `model` | Modelo usado na chamada. |
 | `promptTokens` / `completionTokens` / `totalTokens` | Consumo de tokens da chamada. |
-| `costUsd` | Custo estimado da chamada, calculado pelo SDK. |
+| `costUsd` | Custo estimado da chamada, calculado pelo SDK. `null` se o modelo não estiver na tabela de preços do SDK. |
 | `latencyMs` | Tempo total da chamada ao provedor. |
 | `status` | `success` ou `error` — o SDK também reporta chamadas que falharam no provedor, para refletir uso real. |
 | `timestamp` | Data/hora (UTC) em que a chamada foi executada. |
@@ -55,5 +57,5 @@ A API Key do projeto é enviada apenas no header (`X-Api-Key`), nunca no corpo d
 
 - **Nunca falhar a chamada original.** Qualquer erro no envio da métrica é isolado e não deve, em nenhuma hipótese, lançar exceção para o código da aplicação cliente.
 - **Sem bloqueio perceptível.** O envio ao Webhook acontece em paralelo (fire-and-forget), não em sequência antes de retornar a resposta.
-- **Tabela de preços embutida e versionada.** Como custo por token muda com o tempo e por modelo, a tabela de preços vive no próprio pacote do SDK e é atualizada em novas versões — isso mantém o cálculo de custo simples, sem exigir uma chamada de rede extra para "descobrir o preço".
+- **Tabela de preços embutida e versionada.** Como custo por token muda com o tempo e por modelo, a tabela de preços vive no próprio pacote do SDK e é atualizada em novas versões — isso mantém o cálculo de custo simples, sem exigir uma chamada de rede extra para "descobrir o preço", e transparente para quem instala o pacote (o preço usado é código auditável, não uma regra escondida no backend).
 - **Suporte a múltiplos provedores por adapter.** Cada provedor suportado (OpenAI, Anthropic, etc.) tem um adapter interno responsável por: chamar o SDK oficial do provedor e normalizar a extração de tokens/modelo da resposta (cada provedor retorna esse dado em um formato diferente).
