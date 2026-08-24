@@ -37,16 +37,23 @@ Toda borda do sistema que recebe dado externo valida antes de processar:
 
 ## Segredos e configuração
 
-Todo segredo do sistema vive em **variável de ambiente**, nunca em código-fonte ou arquivo versionado:
+Duas situações diferentes, com regras diferentes — a distinção importa especialmente por este ser um projeto Open Source, onde alguém clonando o repositório precisa enxergar quais chaves de configuração existem sem precisar caçar em nenhum lugar escondido:
 
-| Segredo | Onde é usado |
+### Em desenvolvimento local
+
+`appsettings.Development.json` de cada serviço C# é **versionado** e contém valores reais — porque não são segredos de verdade, são credenciais descartáveis que só existem no Postgres/Redis do Docker Compose local (mesmos valores de `.env.example`, ver [12-ambiente-local.md](12-ambiente-local.md)). O objetivo é onboarding: `git clone` + `docker compose up` + `dotnet run` funcionam de primeira, sem nenhum passo manual de configurar segredo.
+
+| Configuração | Onde vive (dev) |
 |---|---|
-| Chave HMAC (pepper) para hash de API Keys | Webhook, dashboard (ao gerar novas chaves) |
-| Usuário/senha do login do dashboard | API GraphQL |
-| Chave de assinatura do JWT | API GraphQL |
-| Connection strings (Postgres escrita/leitura, Redis) | Webhook, Consumer, API GraphQL |
+| Connection strings (Postgres escrita/leitura, Redis) | `appsettings.Development.json` de cada serviço |
+| Chave HMAC (pepper) para hash de API Keys | `appsettings.Development.json` do Webhook |
+| Usuário/senha do login do dashboard, chave de assinatura do JWT | `appsettings.Development.json` da API GraphQL |
 
-Em desenvolvimento local, as credenciais de Postgres/Redis do Docker Compose vivem em `.env` (gitignored, gerado a partir de `.env.example`) — ver [12-ambiente-local.md](12-ambiente-local.md). São credenciais de uso exclusivamente local; ainda assim nunca versionadas, para manter o hábito consistente com o que vale em produção.
+### Em produção
+
+`appsettings.json` (o arquivo base, sem sufixo de ambiente) **nunca** contém valor real para nada da tabela acima — só a estrutura/chaves quando fizer sentido documentar o formato esperado. Os valores reais são fornecidos por **variável de ambiente** no ambiente de deploy (o ASP.NET Core sobrescreve configuração automaticamente via variáveis como `ConnectionStrings__WriteDatabase`, sem precisar de código extra para isso) — nunca em arquivo, nunca em `appsettings.Production.json` versionado.
+
+Resumindo a regra: **segredo de desenvolvimento pode e deve estar no repositório, porque não é segredo de verdade; segredo de produção nunca está no repositório, em hipótese nenhuma.**
 
 ## Transporte
 
