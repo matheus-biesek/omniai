@@ -26,6 +26,10 @@ const result = await omniai.call({
 
 `result` é exatamente o que o provedor de IA retornaria — o SDK não modifica, envolve ou atrasa essa resposta.
 
+**O SDK não lê variável de ambiente para nenhum dado de negócio** (provedor, projeto, API Key, modelo) — tudo isso é parâmetro explícito de `omniai.call(...)`, decidido por quem chama, nunca lido de `process.env` por dentro do pacote. Isso mantém o SDK simples de testar (sem estado global escondido) e portável entre runtimes.
+
+A única exceção é a **URL do Webhook** — não é um dado de negócio, é infraestrutura, e não muda entre uma chamada e outra dentro da mesma aplicação. O SDK lê `process.env.OMNIAI_WEBHOOK_URL` uma vez; se quiser sobrescrever numa chamada específica (ex: multi-tenant apontando pra Webhooks diferentes), `webhookUrl` pode ser passado em `omniai.call(...)` e tem prioridade sobre a variável de ambiente.
+
 ## O que o SDK faz internamente
 
 1. **Marca o início** da chamada (timestamp + alta resolução para latência).
@@ -33,7 +37,7 @@ const result = await omniai.call({
 3. **Marca o fim** da chamada e calcula a latência.
 4. **Extrai tokens** da resposta do provedor (prompt tokens, completion tokens, total).
 5. **Calcula o custo estimado** com base em uma tabela de preços por provedor/modelo mantida no próprio SDK. Nenhum provedor retorna preço na resposta da chamada — só contagem de tokens — então essa tabela é o SDK que carrega. Se o modelo não estiver catalogado, `costUsd` é enviado como `null` em vez de `0`, para não confundir "sem custo" com "preço desconhecido".
-6. **Envia a métrica ao Webhook** de forma assíncrona e "fire-and-forget": o envio não bloqueia nem pode falhar a chamada original da aplicação. Se o envio falhar (timeout, Webhook fora do ar), o erro é apenas logado — nunca propagado para quem chamou `omniai.call`.
+6. **Envia a métrica ao Webhook** (URL resolvida de `webhookUrl`, se passado, senão de `OMNIAI_WEBHOOK_URL`) de forma assíncrona e "fire-and-forget": o envio não bloqueia nem pode falhar a chamada original da aplicação. Se o envio falhar (timeout, Webhook fora do ar, ou a variável de ambiente nem estar definida), o erro é apenas logado — nunca propagado para quem chamou `omniai.call`.
 7. **Retorna a resposta original** do provedor à aplicação chamadora, no passo 2.
 
 **Por que calcular no SDK e não no backend:** manter o cálculo junto de quem já tem os tokens na mão deixa transparente, pra quem usa o SDK, exatamente como o dado de custo é produzido — sem uma etapa "invisível" acontecendo no backend depois que o evento já saiu da aplicação. O trade-off aceito é que a tabela de preços precisa ser atualizada via nova versão do pacote quando um provedor muda preços (ver [Princípios de design do SDK](#princípios-de-design-do-sdk) abaixo).
