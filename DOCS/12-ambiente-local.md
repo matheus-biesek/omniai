@@ -76,3 +76,16 @@ docker compose down -v     # derruba e apaga os dados (recomeça do zero)
 ```
 
 Os dados de cada serviço ficam em volumes nomeados do Docker (`postgres_primary_data`, `postgres_replica_data`, `redis_data`) — não em pastas do repositório, então não aparecem no `git status` nem precisam de entrada própria no `.gitignore`.
+
+## Portas dos serviços (fora do Docker Compose)
+
+Os 3 serviços C# e o frontend rodam direto na máquina (não estão no `docker-compose.yml`, que cobre só a infraestrutura de dados). Portas fixadas em `Properties/launchSettings.json` de cada serviço, para não depender do valor aleatório que o template do Visual Studio gera:
+
+| Serviço | Porta (HTTP, dev) |
+|---|---|
+| Webhook | `5100` |
+| Consumer | `5200` (inclui o Hub do SignalR em `/hub`) |
+| ApiGraphQL | `5300` (GraphQL em `/graphql`) |
+| cockpit (Vite dev server) | `5173` (padrão do Vite) |
+
+O `cockpit/.env` (ver [07-modulo-frontend.md](07-modulo-frontend.md#variáveis-de-ambiente)) aponta para essas mesmas portas.

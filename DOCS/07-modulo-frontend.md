@@ -47,6 +47,19 @@ src/
 - **`features/`** agrupa por caso de uso de negócio (autenticação, estatísticas de uso), não por tipo técnico — evita que um componente de UI fique desacoplado da lógica que o alimenta.
 - **`components/`** e **`shared/ui/`** guardam apenas peças de interface sem regra de negócio, reutilizáveis entre telas.
 
+## Variáveis de ambiente
+
+O frontend não guarda segredo nenhum — tudo que roda no navegador é, por definição, público. As variáveis de ambiente aqui existem só para apontar para onde estão os serviços de backend, e mudam entre desenvolvimento e produção:
+
+| Variável | Uso |
+|---|---|
+| `VITE_GRAPHQL_URL` | Endpoint da [API GraphQL](06-modulo-api.md) (`/graphql`) |
+| `VITE_HUB_URL` | Endpoint do Hub SignalR do [Consumer](05-modulo-consumer.md#comunicação-em-tempo-real-signalr) (`/hub`) |
+
+Prefixo `VITE_` é exigido pelo Vite — só variáveis com esse prefixo são expostas ao código do navegador (`import.meta.env.VITE_...`); qualquer outra fica só disponível durante o build, nunca no bundle final.
+
+`cockpit/.env` é **versionado**, com os valores de desenvolvimento local (mesmas portas de [12-ambiente-local.md](12-ambiente-local.md#portas-dos-serviços-fora-do-docker-compose)) — não é segredo, então não há razão para escondê-lo, e quem clona o repositório já sobe com tudo funcionando. Em produção, o valor é definido no build/deploy (variável de ambiente do serviço de hospedagem do frontend), sobrescrevendo o `.env` do repositório.
+
 ## Princípios de UX
 
 - Uma única tela concentra a informação principal — sem necessidade de navegação entre múltiplos dashboards para responder "quanto estamos gastando com IA".

@@ -9,9 +9,9 @@ node_modules/
 dist/
 build/
 
-# Segredos locais
-.env
-!.env.example
+# Segredos locais do Docker Compose (raiz) — cockpit/.env NÃO é segredo, fica versionado (ver DOCS/07-modulo-frontend.md)
+/.env
+!/.env.example
 
 # Editor / SO
 .idea/
