@@ -1,15 +1,20 @@
 using System.Threading.RateLimiting;
+using FluentValidation;
 using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.EntityFrameworkCore;
 using Shared.Data;
 using StackExchange.Redis;
+using Webhook.Api;
+using Webhook.Api.Endpoints;
+using Webhook.Application.ReceberMetrica;
+using Webhook.Domain;
+using Webhook.Domain.Abstractions;
+using Webhook.Infrastructure;
 
 var builder = WebApplication.CreateBuilder(args);
 
 // Add services to the container.
 
-builder.Services.AddControllers();
-// Learn more about configuring OpenAPI at https://aka.ms/aspnet/openapi
 builder.Services.AddOpenApi();
 
 builder.Services.AddDbContext<WriteDbContext>(options =>
@@ -30,6 +35,14 @@ builder.Services.AddRateLimiter(options =>
             }));
 });
 
+builder.Services.Configure<ApiKeyHashingOptions>(builder.Configuration.GetSection(ApiKeyHashingOptions.SectionName));
+builder.Services.Configure<QueueBackpressureOptions>(builder.Configuration.GetSection(QueueBackpressureOptions.SectionName));
+
+builder.Services.AddScoped<IApiKeyRepository, EfApiKeyRepository>();
+builder.Services.AddScoped<IUsageEventPublisher, RedisUsageEventPublisher>();
+builder.Services.AddScoped<ReceberMetricaUseCase>();
+builder.Services.AddScoped<IValidator<ReceberMetricaRequest>, ReceberMetricaRequestValidator>();
+
 var app = builder.Build();
 
 // Configure the HTTP request pipeline.
@@ -42,8 +55,6 @@ app.UseHttpsRedirection();
 
 app.UseRateLimiter();
 
-app.UseAuthorization();
-
-app.MapControllers();
+app.MapUsageEventsEndpoint();
 
 app.Run();
