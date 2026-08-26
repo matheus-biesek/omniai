@@ -27,7 +27,7 @@ proex/                        # raiz do monorepo
   - `Domain/` — entidades e regras de negócio puras.
   - `Application/` — Use Cases, orquestram o domínio.
   - `Infrastructure/` — acesso a banco, Redis, provedores externos.
-  - `Api/` (ou `Presentation/`) — controllers/endpoints/resolvers, tradução da requisição para o Use Case.
+  - `Api/` (ou `Presentation/`) — controllers/endpoints/resolvers, tradução da requisição para o Use Case. No Consumer, que não expõe HTTP além do Hub, essa camada de entrada chama-se `Workers/` (o `BackgroundService` que lê a fila), ver [05-modulo-consumer.md](05-modulo-consumer.md).
 - Cada camada é uma **pasta**, não um projeto (`.csproj`) separado — evita referências de projeto internas desnecessárias para o volume de código deste sistema.
 - Nomes de projeto e de pasta são os mesmos, em PascalCase (`Webhook`, `Consumer`, `ApiGraphQL`, `Shared`) — sem prefixo `OmniAI.`, já que não há risco de colisão entre eles dentro da mesma solution.
 - Nenhum serviço depende do código de **outro serviço** diretamente — a comunicação entre Webhook, Consumer e API GraphQL acontece sempre por rede (HTTP, Redis), nunca por referência de projeto cruzada entre eles. Isso mantém cada serviço deployável de forma independente.
@@ -38,7 +38,7 @@ proex/                        # raiz do monorepo
 
 ```
 Shared/
-├── Entities/            # Project, ApiKey, UsageRecord
+├── Entities/            # Project, ApiKey, UsageRecord, UsageEventLog
 ├── Data/
 │   ├── Configurations/   # mapeamento EF Core (IEntityTypeConfiguration) de cada entidade
 │   ├── WriteDbContext.cs

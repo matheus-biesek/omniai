@@ -18,10 +18,16 @@ public class UsageRecordConfiguration : IEntityTypeConfiguration<UsageRecord>
         builder.HasIndex(r => r.ProjectId);
         builder.HasIndex(r => r.OccurredAt);
         builder.HasIndex(r => r.Provider);
+        builder.HasIndex(r => r.SourceEventLogId).IsUnique();
 
         builder.HasOne(r => r.Project)
             .WithMany()
             .HasForeignKey(r => r.ProjectId)
+            .OnDelete(DeleteBehavior.Restrict);
+
+        builder.HasOne(r => r.SourceEventLog)
+            .WithMany()
+            .HasForeignKey(r => r.SourceEventLogId)
             .OnDelete(DeleteBehavior.Restrict);
     }
 }

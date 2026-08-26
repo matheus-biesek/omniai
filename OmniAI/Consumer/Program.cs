@@ -1,5 +1,10 @@
 using System.Text;
+using Consumer.Application.ProcessarEventoDeUso;
+using Consumer.Application.RegistrarEvento;
+using Consumer.Domain.Abstractions;
 using Consumer.Hubs;
+using Consumer.Infrastructure;
+using Consumer.Workers;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
@@ -10,8 +15,6 @@ var builder = WebApplication.CreateBuilder(args);
 
 // Add services to the container.
 
-builder.Services.AddControllers();
-// Learn more about configuring OpenAPI at https://aka.ms/aspnet/openapi
 builder.Services.AddOpenApi();
 
 builder.Services.AddDbContext<WriteDbContext>(options =>
@@ -21,6 +24,21 @@ builder.Services.AddSingleton<IConnectionMultiplexer>(_ =>
     ConnectionMultiplexer.Connect(builder.Configuration.GetConnectionString("Redis")!));
 
 builder.Services.AddSignalR();
+
+builder.Services.Configure<QueueOptions>(builder.Configuration.GetSection(QueueOptions.SectionName));
+builder.Services.Configure<RetryOptions>(builder.Configuration.GetSection(RetryOptions.SectionName));
+builder.Services.Configure<WorkerOptions>(builder.Configuration.GetSection(WorkerOptions.SectionName));
+
+builder.Services.AddSingleton<IUsageEventReader, RedisUsageEventReader>();
+builder.Services.AddScoped<IUsageEventLogRepository, EfUsageEventLogRepository>();
+builder.Services.AddScoped<IProjectLookup, EfProjectLookup>();
+builder.Services.AddScoped<IUsageRecordRepository, EfUsageRecordRepository>();
+builder.Services.AddScoped<IUsageNotifier, SignalRUsageNotifier>();
+
+builder.Services.AddScoped<RegistrarEventoUseCase>();
+builder.Services.AddScoped<ProcessarEventoDeUsoUseCase>();
+
+builder.Services.AddHostedService<UsageEventConsumerWorker>();
 
 builder.Services
     .AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
@@ -68,7 +86,6 @@ app.UseHttpsRedirection();
 app.UseAuthentication();
 app.UseAuthorization();
 
-app.MapControllers();
 app.MapHub<UsageHub>("/hub").RequireAuthorization();
 
 app.Run();
