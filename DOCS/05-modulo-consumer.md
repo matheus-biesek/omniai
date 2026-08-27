@@ -57,6 +57,8 @@ Duas decisões tomadas por causa disso:
 
 O Use Case já trata falha transiente/permanente internamente — mas se algo **inesperado** ainda assim escapar dali (um bug, uma exceção na própria lógica de tratamento de erro), isso não pode derrubar o processo inteiro. Por padrão, uma exceção não tratada dentro de um `BackgroundService` do ASP.NET Core encerra o host inteiro (`BackgroundServiceExceptionBehavior.StopHost`) — ou seja, **um único evento problemático pararia o Consumer inteiro**, o oposto do que se quer aqui. Por isso, o laço que processa cada evento tem um `try/catch` de última instância: loga como erro crítico e segue para o próximo evento, sem nunca deixar o worker parar.
 
+Existe uma segunda camada, mais externa, cobrindo falha de **infraestrutura** (não de um evento específico): o próprio `while` do worker envolve a leitura do Redis e a checagem de pendências do Postgres num `try/catch` que loga e tenta de novo no próximo ciclo. Isso foi descoberto necessário na prática: suspender/hibernar a máquina de desenvolvimento derruba a conexão TCP com o Redis, e a primeira leitura após retomar lança uma exceção de timeout — sem essa camada externa, o worker inteiro morria por causa de uma reconexão de rede, não de um evento malformado.
+
 ## Comunicação em tempo real (SignalR)
 
 - O Hub do SignalR expõe um canal (`UsageHub`) ao qual o frontend se conecta após montar a tela do dashboard.

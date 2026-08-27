@@ -30,8 +30,18 @@ public class UsageEventConsumerWorker : BackgroundService
 
         while (!stoppingToken.IsCancellationRequested)
         {
-            await RegistrarNovosEventosAsync(stoppingToken);
-            await ProcessarEventosPendentesAsync(stoppingToken);
+            try
+            {
+                await RegistrarNovosEventosAsync(stoppingToken);
+                await ProcessarEventosPendentesAsync(stoppingToken);
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            {
+                // Rede de seguranca de nivel mais alto: falha de infraestrutura (Redis ou Postgres
+                // temporariamente inalcancavel - ex: conexao caiu apos o SO suspender/hibernar) nao
+                // pode derrubar o worker inteiro. Loga e tenta de novo no proximo ciclo.
+                _logger.LogError(ex, "Falha inesperada no ciclo do worker, tentando novamente no proximo ciclo.");
+            }
 
             await Task.Delay(_options.PollIntervalMs, stoppingToken);
         }
