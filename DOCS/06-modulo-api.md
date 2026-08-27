@@ -9,6 +9,29 @@ Expor ao frontend as duas únicas operações necessárias para o dashboard func
 - **C# / ASP.NET Core** com **HotChocolate** (biblioteca GraphQL de referência no ecossistema .NET).
 - Mesma organização em **DDD + Use Case** dos demais serviços C#: cada resolver (query/mutation) delega a um Use Case; a camada GraphQL é apenas a porta de entrada.
 
+```
+ApiGraphQL/
+├── Domain/
+│   ├── UsageStatisticsFilter.cs / UsageStatisticsResult.cs
+│   └── Abstractions/
+│       ├── IJwtTokenGenerator.cs
+│       └── IUsageStatisticsRepository.cs
+├── Application/
+│   ├── Login/
+│   │   ├── DashboardCredentialsOptions.cs   # config Dashboard:Username/Password
+│   │   ├── InvalidCredentialsException.cs
+│   │   └── LoginUseCase.cs
+│   └── UsageStatistics/
+│       └── GetUsageStatisticsUseCase.cs
+├── Infrastructure/
+│   ├── JwtOptions.cs / JwtTokenGenerator.cs
+│   └── EfUsageStatisticsRepository.cs        # ReadDbContext, 3 agregações (total, por provedor, por projeto)
+└── Types/
+    ├── Query.cs (ping, usageStatistics)
+    ├── Mutation.cs (login)
+    └── Inputs/UsageStatisticsFilterInput.cs
+```
+
 ## Por que GraphQL (e não REST) mesmo em um escopo simples
 
 O escopo inicial tem apenas duas operações, o que por si só não exigiria GraphQL. A escolha é deliberada e olhando para a extensão natural do produto:
@@ -55,3 +78,11 @@ query {
 
 - O JWT emitido pelo `login` é exigido em todas as demais operações GraphQL e na conexão inicial do SignalR Hub.
 - Não há refresh token nem renovação automática nesta primeira versão — expirando o token, o usuário refaz o login. Mantém o fluxo de autenticação no mínimo necessário, coerente com o princípio de simplicidade do projeto.
+
+### Como a exigência de autenticação é implementada
+
+`usageStatistics` recebe um `ClaimsPrincipal` injetado diretamente como parâmetro do resolver (suporte nativo do HotChocolate, preenchido a partir do `HttpContext.User` que o middleware `UseAuthentication()` já popula a partir do JWT) e verifica `claimsPrincipal.Identity.IsAuthenticated` manualmente, lançando uma exceção genérica se não autenticado.
+
+**Isso não é o padrão mais idiomático do HotChocolate** — o esperado seria o atributo `[HotChocolate.Authorization.Authorize]` no resolver, com `.AddAuthorizationCore()` no builder do GraphQL Server. Essa abordagem foi tentada primeiro e descartada: com o pacote `HotChocolate.Authorization` 16.6.1 (mesma versão do `HotChocolate.AspNetCore` usado aqui), habilitar `AddAuthorizationCore()` — mesmo sem nenhum `[Authorize]` em uso — faz **toda e qualquer query falhar** com `"Unexpected Execution Error"` (HTTP 500), incluindo campos triviais sem relação nenhuma com autorização. O erro não aparece em log nenhum (nem em `ILogger`, nem no filtro de erro registrado via `AddErrorFilter` — a falha acontece num estágio anterior à execução dos resolvers). Não foi encontrada uma combinação de configuração que fizesse `AddAuthorizationCore()` funcionar nessa versão.
+
+A checagem manual via `ClaimsPrincipal` evita esse subsistema por completo, com o mesmo resultado prático (campo continua exigindo um JWT válido) e bem menos código do que seria necessário para investigar a fundo um possível bug da biblioteca. Se o pacote `HotChocolate.Authorization` receber uma correção em versão futura, vale reavaliar — a mensagem de erro genérica (`"Autenticação necessária."`) já é mapeada no `AddErrorFilter`, então trocar de mecanismo não muda o contrato observado pelo cliente.
