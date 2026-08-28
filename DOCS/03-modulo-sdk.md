@@ -9,6 +9,27 @@ Permitir que uma aplicação Node.js chame um provedor de IA através do OmniAI 
 - **Node.js / TypeScript**, publicado como pacote npm.
 - Sem dependência de frameworks do lado da aplicação cliente — funciona em qualquer projeto Node (Express, NestJS, script simples, etc.).
 
+```
+sdk-node/
+├── src/
+│   ├── index.ts                     # API pública: export { call }
+│   ├── call.ts                      # orquestra: cronometra → adapter → custo → envia métrica → retorna
+│   ├── types.ts                     # OmniAiCallParams
+│   ├── providers/
+│   │   ├── ProviderAdapter.ts        # interface comum a todo provedor
+│   │   ├── registry.ts               # provider (string) → adapter; erro claro se não suportado
+│   │   └── openai/OpenAiAdapter.ts   # único adapter implementado até agora
+│   ├── pricing/
+│   │   ├── pricingTable.ts
+│   │   └── calculateCost.ts
+│   └── webhook/
+│       ├── UsageMetricPayload.ts
+│       └── sendMetric.ts             # POST fire-and-forget, nunca lança erro
+```
+
+- Cada provedor tem seu SDK oficial como **peer dependency opcional** (`openai`, por exemplo) — importado dinamicamente só dentro do respectivo adapter. Quem usa só um provedor não é obrigado a instalar o pacote dos outros.
+- Só o adapter da **OpenAI** está implementado por enquanto; Anthropic e demais entram depois, seguindo a mesma interface (`ProviderAdapter`).
+
 ## Superfície de API
 
 Uma única função pública é exposta, por exemplo:
@@ -37,8 +58,10 @@ A única exceção é a **URL do Webhook** — não é um dado de negócio, é i
 3. **Marca o fim** da chamada e calcula a latência.
 4. **Extrai tokens** da resposta do provedor (prompt tokens, completion tokens, total).
 5. **Calcula o custo estimado** com base em uma tabela de preços por provedor/modelo mantida no próprio SDK. Nenhum provedor retorna preço na resposta da chamada — só contagem de tokens — então essa tabela é o SDK que carrega. Se o modelo não estiver catalogado, `costUsd` é enviado como `null` em vez de `0`, para não confundir "sem custo" com "preço desconhecido".
-6. **Envia a métrica ao Webhook** (URL resolvida de `webhookUrl`, se passado, senão de `OMNIAI_WEBHOOK_URL`) de forma assíncrona e "fire-and-forget": o envio não bloqueia nem pode falhar a chamada original da aplicação. Se o envio falhar (timeout, Webhook fora do ar, ou a variável de ambiente nem estar definida), o erro é apenas logado — nunca propagado para quem chamou `omniai.call`.
+6. **Envia a métrica ao Webhook** (URL resolvida de `webhookUrl`, se passado, senão de `OMNIAI_WEBHOOK_URL`) de forma assíncrona e "fire-and-forget": o envio não bloqueia nem pode falhar a chamada original da aplicação. Se o envio falhar (timeout — 5s — Webhook fora do ar, ou a variável de ambiente nem estar definida), o erro é apenas logado (`console.error`) — nunca propagado para quem chamou `omniai.call`.
 7. **Retorna a resposta original** do provedor à aplicação chamadora, no passo 2.
+
+**Se o provedor de IA falhar de verdade** (erro de rede, modelo inexistente, rate limit, etc.), isso é diferente do passo 6: o SDK ainda envia uma métrica (`status: "error"`, tokens zerados, `costUsd: null`) para refletir a tentativa, mas **propaga o erro original do provedor** para quem chamou — a regra "nunca falhar a chamada original" vale só para o envio da métrica, nunca para o resultado real da chamada de IA em si. Testado com uma chamada real à OpenAI usando um modelo inexistente: o erro da OpenAI chega intacto a quem chamou, e a métrica de falha aparece no banco.
 
 **Por que calcular no SDK e não no backend:** manter o cálculo junto de quem já tem os tokens na mão deixa transparente, pra quem usa o SDK, exatamente como o dado de custo é produzido — sem uma etapa "invisível" acontecendo no backend depois que o evento já saiu da aplicação. O trade-off aceito é que a tabela de preços precisa ser atualizada via nova versão do pacote quando um provedor muda preços (ver [Princípios de design do SDK](#princípios-de-design-do-sdk) abaixo).
 
