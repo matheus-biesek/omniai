@@ -2,12 +2,18 @@ using System.Text;
 using ApiGraphQL.Application.Login;
 using ApiGraphQL.Application.UsageStatistics;
 using ApiGraphQL.Domain.Abstractions;
+using ApiGraphQL.Domain.Exceptions;
 using ApiGraphQL.Infrastructure;
 using ApiGraphQL.Types;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
 using Shared.Data;
+using Shared.Security;
+using CreateApiKeyUseCase = ApiGraphQL.Application.CreateApiKey.CreateApiKeyUseCase;
+using CreateProjectUseCase = ApiGraphQL.Application.CreateProject.CreateProjectUseCase;
+using ListProjectsUseCase = ApiGraphQL.Application.ListProjects.ListProjectsUseCase;
+using RevokeApiKeyUseCase = ApiGraphQL.Application.RevokeApiKey.RevokeApiKeyUseCase;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -18,14 +24,29 @@ builder.Services.AddHttpContextAccessor();
 builder.Services.AddDbContext<ReadDbContext>(options =>
     options.UseNpgsql(builder.Configuration.GetConnectionString("ReadDatabase")));
 
+// Escrita de Project/ApiKey e uma operacao administrativa de baixo volume - nao compete com a
+// ingestao de UsageRecord, entao usar o WriteDbContext aqui nao fere a separacao leitura/escrita
+// (ver 08-banco-de-dados.md).
+builder.Services.AddDbContext<WriteDbContext>(options =>
+    options.UseNpgsql(builder.Configuration.GetConnectionString("WriteDatabase")));
+
 builder.Services.Configure<DashboardCredentialsOptions>(builder.Configuration.GetSection(DashboardCredentialsOptions.SectionName));
 builder.Services.Configure<JwtOptions>(builder.Configuration.GetSection(JwtOptions.SectionName));
+builder.Services.Configure<ApiKeyHashingOptions>(builder.Configuration.GetSection(ApiKeyHashingOptions.SectionName));
 
 builder.Services.AddSingleton<IJwtTokenGenerator, JwtTokenGenerator>();
 builder.Services.AddScoped<IUsageStatisticsRepository, EfUsageStatisticsRepository>();
+builder.Services.AddScoped<IProjectRepository, EfProjectRepository>();
+builder.Services.AddScoped<IApiKeyRepository, EfApiKeyRepository>();
+builder.Services.AddScoped<IProjectDirectoryQuery, EfProjectDirectoryQuery>();
+builder.Services.AddScoped<IUnitOfWork, EfUnitOfWork>();
 
 builder.Services.AddScoped<LoginUseCase>();
 builder.Services.AddScoped<GetUsageStatisticsUseCase>();
+builder.Services.AddScoped<CreateProjectUseCase>();
+builder.Services.AddScoped<CreateApiKeyUseCase>();
+builder.Services.AddScoped<RevokeApiKeyUseCase>();
+builder.Services.AddScoped<ListProjectsUseCase>();
 
 builder.Services
     .AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
@@ -54,7 +75,11 @@ builder.Services
         // So mensagens de excecoes explicitamente conhecidas como seguras chegam ao cliente -
         // qualquer outra excecao continua com a mensagem generica padrao do HotChocolate, para
         // nao vazar detalhe interno de implementacao.
-        if (error.Exception is InvalidCredentialsException or UnauthorizedAccessException)
+        if (error.Exception is InvalidCredentialsException
+            or UnauthorizedAccessException
+            or ProjectNameAlreadyExistsException
+            or ProjectNotFoundException
+            or ApiKeyNotFoundException)
         {
             return error.WithMessage(error.Exception.Message);
         }

@@ -45,8 +45,12 @@ Shared/
 │   ├── ReadDbContext.cs
 │   ├── WriteDbContextFactory.cs   # IDesignTimeDbContextFactory, só para `dotnet ef migrations`
 │   └── Migrations/       # geradas via `dotnet ef migrations add`, ligadas só ao WriteDbContext
-└── Messaging/
-    └── UsageEventMessage.cs   # contrato do payload publicado no Redis Stream (inclui costUsd, calculado pelo SDK)
+├── Messaging/
+│   └── UsageEventMessage.cs   # contrato do payload publicado no Redis Stream (inclui costUsd, calculado pelo SDK)
+└── Security/
+    ├── ApiKeyHasher.cs        # HMAC-SHA256 — usado pelo Webhook (valida) e pela ApiGraphQL (gera)
+    ├── ApiKeyHashingOptions.cs
+    └── ApiKeyGenerator.cs     # gera a chave em texto plano (prefixo "ombk_"), usado só pela ApiGraphQL
 ```
 
 - **Entidades e DbContexts do EF Core** — `Project`, `ApiKey`, `UsageRecord`, além de `WriteDbContext` e `ReadDbContext` (ver [08-banco-de-dados.md](08-banco-de-dados.md#como-a-aplicação-usa-os-dois-bancos)) e as migrations, que vivem exclusivamente aqui.
@@ -54,9 +58,9 @@ Shared/
 
 | Projeto | Referencia `Shared` para |
 |---|---|
-| Webhook | `WriteDbContext` (validar API Key) + contrato do evento (montar a mensagem publicada) |
+| Webhook | `WriteDbContext` (validar API Key) + contrato do evento (montar a mensagem publicada) + `ApiKeyHasher` (validar) |
 | Consumer | `WriteDbContext` (persistir `UsageRecord`) + contrato do evento (ler a mensagem consumida) |
-| ApiGraphQL | `ReadDbContext` (query `usageStatistics`) |
+| ApiGraphQL | `ReadDbContext` (`usageStatistics`, `projects`) + `WriteDbContext` (`createProject`, `createApiKey`, `revokeApiKey`) + `ApiKeyHasher`/`ApiKeyGenerator` (gerar chave nova) |
 
 Isso não contradiz a regra de independência entre serviços: nenhum dos três depende do código de **outro serviço**, todos dependem apenas de uma biblioteca comum que nenhum deles "roda" sozinha — um shared kernel, não um acoplamento serviço-a-serviço.
 

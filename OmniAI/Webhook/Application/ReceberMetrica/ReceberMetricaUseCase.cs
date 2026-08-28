@@ -1,6 +1,6 @@
 using Microsoft.Extensions.Options;
 using Shared.Messaging;
-using Webhook.Domain;
+using Shared.Security;
 using Webhook.Domain.Abstractions;
 
 namespace Webhook.Application.ReceberMetrica;

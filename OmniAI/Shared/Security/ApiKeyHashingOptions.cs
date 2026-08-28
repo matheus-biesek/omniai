@@ -1,4 +1,4 @@
-namespace Webhook.Domain;
+namespace Shared.Security;
 
 public class ApiKeyHashingOptions
 {

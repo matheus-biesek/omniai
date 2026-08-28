@@ -13,7 +13,9 @@ O texto original do projeto descrevia a API Key como "criptografada" no banco. A
 
 > A aplicação nunca precisa **ler de volta** a API Key em texto plano depois de criada — ela só precisa **comparar** a chave recebida numa requisição com a que foi cadastrada. Isso é exatamente o mesmo problema de senhas: a solução correta é uma função de hash (com uma chave de assinatura secreta do servidor, um "pepper", para o HMAC), nunca uma criptografia que alguém com acesso ao banco e à chave de criptografia conseguiria reverter.
 
-Consequência prática: a chave em texto plano é exibida ao usuário **uma única vez**, no momento da criação, no dashboard. Se for perdida, o fluxo é gerar uma nova chave e revogar a antiga — não existe "mostrar a chave novamente".
+Consequência prática: a chave em texto plano é exibida ao usuário **uma única vez**, no momento da criação, no dashboard (mutation `createProject`/`createApiKey` — ver [06-modulo-api.md](06-modulo-api.md)). Se for perdida, o fluxo é gerar uma nova chave e revogar a antiga — não existe "mostrar a chave novamente".
+
+O algoritmo de hash (`ApiKeyHasher`) e o gerador da chave em si (`ApiKeyGenerator`, prefixo `ombk_` + 32 bytes aleatórios) vivem no `Shared` — não no Webhook nem na ApiGraphQL isoladamente. É o mesmo algoritmo dos dois lados (quem gera, na ApiGraphQL; quem valida, no Webhook) por construção, sem risco de um dos dois divergir com o tempo.
 
 ## Rate limiting
 

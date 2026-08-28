@@ -42,7 +42,7 @@ O acesso a dados é feito através de dois `DbContext` (Entity Framework Core), 
 |---|---|---|
 | Webhook | `WriteDbContext` | Valida a API Key contra `Project`/`ApiKey` no primary, não na réplica. É uma checagem de segurança: uma chave revogada precisa parar de funcionar imediatamente, e a réplica tem uma janela de atraso (ver [Consistência eventual](#consistência-eventual)) incompatível com esse requisito. Como é uma busca pontual por índice (não uma agregação), o custo extra no primary é desprezível. |
 | Consumer | `WriteDbContext` | Persiste cada `UsageRecord` recebido da fila. |
-| API GraphQL | `ReadDbContext` | Serve a query `usageStatistics`, que é uma leitura de agregação — não precisa e não deve competir por recursos com o banco de escrita. |
+| API GraphQL | `ReadDbContext` **e** `WriteDbContext` | `ReadDbContext` serve `usageStatistics` e `projects` (leituras de agregação/exibição). `WriteDbContext` serve `createProject`, `createApiKey` e `revokeApiKey` — são escritas administrativas, de frequência baixíssima (alguém cadastrando um projeto ocasionalmente), então não competem de forma relevante com a ingestão de `UsageRecord` que é o motivo original de separar escrita e leitura. É o único serviço com os dois contextos ao mesmo tempo — cada operação usa o que faz sentido pra ela, não um só por padrão. |
 
 Não existe roteamento dinâmico de query nem um proxy de banco — cada serviço já é configurado, via variável de ambiente, com a connection string do papel que lhe cabe. A escolha de qual `DbContext` usar é uma decisão de código (qual classe é injetada), não uma decisão em tempo de execução.
 

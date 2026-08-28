@@ -3,11 +3,11 @@ using FluentValidation;
 using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.EntityFrameworkCore;
 using Shared.Data;
+using Shared.Security;
 using StackExchange.Redis;
 using Webhook.Api;
 using Webhook.Api.Endpoints;
 using Webhook.Application.ReceberMetrica;
-using Webhook.Domain;
 using Webhook.Domain.Abstractions;
 using Webhook.Infrastructure;
 

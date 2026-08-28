@@ -1,7 +1,7 @@
 using System.Security.Cryptography;
 using System.Text;
 
-namespace Webhook.Domain;
+namespace Shared.Security;
 
 public static class ApiKeyHasher
 {

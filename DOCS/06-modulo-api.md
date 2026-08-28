@@ -2,7 +2,7 @@
 
 ## Objetivo
 
-Expor ao frontend as duas únicas operações necessárias para o dashboard funcionar: autenticar o usuário e consultar as estatísticas de uso agregadas.
+Expor ao frontend tudo que o dashboard precisa: autenticar o usuário, consultar as estatísticas de uso agregadas, e gerenciar os Projetos e API Keys que o SDK usa para se autenticar no Webhook (ver [09-seguranca.md](09-seguranca.md)).
 
 ## Stack e padrão de código
 
@@ -13,22 +13,35 @@ Expor ao frontend as duas únicas operações necessárias para o dashboard func
 ApiGraphQL/
 ├── Domain/
 │   ├── UsageStatisticsFilter.cs / UsageStatisticsResult.cs
+│   ├── ProjectDirectory.cs                   # ProjectSummary, ApiKeySummary (modelo de leitura p/ listagem)
+│   ├── Exceptions/                            # ProjectNameAlreadyExists, ProjectNotFound, ApiKeyNotFound
 │   └── Abstractions/
 │       ├── IJwtTokenGenerator.cs
-│       └── IUsageStatisticsRepository.cs
+│       ├── IUsageStatisticsRepository.cs
+│       ├── IProjectRepository.cs              # escrita (WriteDbContext)
+│       ├── IApiKeyRepository.cs                # escrita (WriteDbContext)
+│       ├── IProjectDirectoryQuery.cs           # leitura (ReadDbContext)
+│       └── IUnitOfWork.cs
 ├── Application/
 │   ├── Login/
 │   │   ├── DashboardCredentialsOptions.cs   # config Dashboard:Username/Password
 │   │   ├── InvalidCredentialsException.cs
 │   │   └── LoginUseCase.cs
-│   └── UsageStatistics/
-│       └── GetUsageStatisticsUseCase.cs
+│   ├── UsageStatistics/GetUsageStatisticsUseCase.cs
+│   ├── CreateProject/CreateProjectUseCase.cs   # cria Project + primeira ApiKey, numa transação só
+│   ├── CreateApiKey/CreateApiKeyUseCase.cs      # nova chave para um Project existente
+│   ├── RevokeApiKey/RevokeApiKeyUseCase.cs
+│   └── ListProjects/ListProjectsUseCase.cs
 ├── Infrastructure/
 │   ├── JwtOptions.cs / JwtTokenGenerator.cs
-│   └── EfUsageStatisticsRepository.cs        # ReadDbContext, 3 agregações (total, por provedor, por projeto)
+│   ├── EfUsageStatisticsRepository.cs        # ReadDbContext, 3 agregações (total, por provedor, por projeto)
+│   ├── EfProjectRepository.cs / EfApiKeyRepository.cs   # WriteDbContext
+│   ├── EfProjectDirectoryQuery.cs             # ReadDbContext
+│   └── EfUnitOfWork.cs
 └── Types/
-    ├── Query.cs (ping, usageStatistics)
-    ├── Mutation.cs (login)
+    ├── Query.cs (ping, usageStatistics, projects)
+    ├── Mutation.cs (login, createProject, createApiKey, revokeApiKey)
+    ├── ClaimsPrincipalExtensions.cs            # RequireAuthenticated(), reutilizado em todo resolver protegido
     └── Inputs/UsageStatisticsFilterInput.cs
 ```
 
@@ -74,6 +87,61 @@ query {
 - Todos os filtros são opcionais; sem filtro, retorna o consumo total da empresa.
 - É a query chamada pelo frontend uma única vez, ao montar a tela do dashboard, para popular o histórico inicial. Atualizações após esse ponto chegam via WebSocket (SignalR), não por nova chamada a esta query (ver [05-modulo-consumer.md](05-modulo-consumer.md#comunicação-em-tempo-real-signalr)).
 
+### `createProject` (mutation)
+
+```graphql
+mutation {
+  createProject(name: "checkout-service") {
+    projectId
+    projectName
+    apiKey
+  }
+}
+```
+
+- Requer autenticação.
+- Cria o `Project` e a **primeira** `ApiKey` associada a ele, numa única transação — um projeto sem nenhuma chave não serve pra nada, então os dois são criados juntos ou nenhum dos dois (ver [`CreateProjectUseCase`](#estrutura-de-implementação) e o `IUnitOfWork`).
+- `apiKey` no retorno é a chave em **texto plano** — é a única vez que ela existe assim; o banco só guarda o hash (ver [09-seguranca.md](09-seguranca.md#api-key-hash-em-vez-de-criptografia-reversível)). É essa chave que o SDK usa no header `X-Api-Key` ao chamar o Webhook.
+- Nome de projeto duplicado retorna um erro claro ("Já existe um projeto chamado '...'") em vez de deixar vazar a exceção de constraint do banco.
+
+### `createApiKey` (mutation)
+
+```graphql
+mutation {
+  createApiKey(projectId: "...") {
+    apiKeyId
+    apiKey
+  }
+}
+```
+
+- Requer autenticação. Gera uma **chave adicional** para um Project já existente (ex: girar a chave sem derrubar a anterior imediatamente, ou uma chave por ambiente). `projectId` inexistente retorna erro claro.
+
+### `revokeApiKey` (mutation)
+
+```graphql
+mutation {
+  revokeApiKey(apiKeyId: "...")
+}
+```
+
+- Requer autenticação. Marca a chave como revogada (`revokedAt`) — nunca apaga a linha, preserva auditoria (ver [08-banco-de-dados.md](08-banco-de-dados.md)). O efeito é imediato: o Webhook usa o mesmo banco de escrita para validar, então a próxima requisição com essa chave já é rejeitada (`401`) — testado na prática durante a implementação. `apiKeyId` inexistente retorna erro claro; revogar uma chave já revogada não faz nada (idempotente).
+
+### `projects` (query)
+
+```graphql
+query {
+  projects {
+    id
+    name
+    apiKeys { id createdAt revokedAt }
+  }
+}
+```
+
+- Requer autenticação. Lista todos os Projects com suas API Keys (nunca a chave em si — só metadados: quando foi criada, se/quando foi revogada). É como o dashboard mostra o que existe e permite revogar/girar chaves.
+- Lê do banco de leitura (réplica), como `usageStatistics` — é uma consulta de exibição, não uma checagem de segurança, então a réplica é apropriada aqui (diferente da validação do Webhook, que usa o banco de escrita — ver [08-banco-de-dados.md](08-banco-de-dados.md#como-a-aplicação-usa-os-dois-bancos)).
+
 ## Autenticação das operações subsequentes
 
 - O JWT emitido pelo `login` é exigido em todas as demais operações GraphQL e na conexão inicial do SignalR Hub.
@@ -81,7 +149,7 @@ query {
 
 ### Como a exigência de autenticação é implementada
 
-`usageStatistics` recebe um `ClaimsPrincipal` injetado diretamente como parâmetro do resolver (suporte nativo do HotChocolate, preenchido a partir do `HttpContext.User` que o middleware `UseAuthentication()` já popula a partir do JWT) e verifica `claimsPrincipal.Identity.IsAuthenticated` manualmente, lançando uma exceção genérica se não autenticado.
+Todo resolver que exige login (`usageStatistics`, `projects`, `createProject`, `createApiKey`, `revokeApiKey`) recebe um `ClaimsPrincipal` injetado diretamente como parâmetro (suporte nativo do HotChocolate, preenchido a partir do `HttpContext.User` que o middleware `UseAuthentication()` já popula a partir do JWT) e chama `claimsPrincipal.RequireAuthenticated()` — um método de extensão (`Types/ClaimsPrincipalExtensions.cs`) que lança uma exceção genérica se não autenticado. Centralizar nessa extensão evita repetir a mesma checagem em cada resolver.
 
 **Isso não é o padrão mais idiomático do HotChocolate** — o esperado seria o atributo `[HotChocolate.Authorization.Authorize]` no resolver, com `.AddAuthorizationCore()` no builder do GraphQL Server. Essa abordagem foi tentada primeiro e descartada: com o pacote `HotChocolate.Authorization` 16.6.1 (mesma versão do `HotChocolate.AspNetCore` usado aqui), habilitar `AddAuthorizationCore()` — mesmo sem nenhum `[Authorize]` em uso — faz **toda e qualquer query falhar** com `"Unexpected Execution Error"` (HTTP 500), incluindo campos triviais sem relação nenhuma com autorização. O erro não aparece em log nenhum (nem em `ILogger`, nem no filtro de erro registrado via `AddErrorFilter` — a falha acontece num estágio anterior à execução dos resolvers). Não foi encontrada uma combinação de configuração que fizesse `AddAuthorizationCore()` funcionar nessa versão.
 
