@@ -66,6 +66,21 @@ builder.Services
 
 builder.Services.AddAuthorization();
 
+// O Cockpit e uma SPA servida de uma origem separada (porta/dominio proprios) - precisa de CORS
+// explicito para as chamadas GraphQL feitas pelo navegador. "Cors:AllowedOrigin" e configurado
+// por variavel de ambiente (ver docker-compose.yml e 12-ambiente-local.md).
+var allowedOrigin = builder.Configuration["Cors:AllowedOrigin"];
+builder.Services.AddCors(options =>
+{
+    options.AddDefaultPolicy(policy =>
+    {
+        if (!string.IsNullOrWhiteSpace(allowedOrigin))
+        {
+            policy.WithOrigins(allowedOrigin).AllowAnyHeader().AllowAnyMethod();
+        }
+    });
+});
+
 builder.Services
     .AddGraphQLServer()
     .AddQueryType<Query>()
@@ -92,6 +107,8 @@ var app = builder.Build();
 // Configure the HTTP request pipeline.
 
 app.UseHttpsRedirection();
+
+app.UseCors();
 
 app.UseAuthentication();
 app.UseAuthorization();

@@ -1,18 +1,20 @@
 # Estrutura do Repositório
 
-O repositório é um **monorepo** com raiz em `proex/`. Cada projeto vive na sua própria pasta ali, junto com a pasta `DOCS/`. Os quatro serviços em C# ficam agrupados dentro de `OmniAI/` (uma solution única); os demais projetos são pastas irmãs, fora dela.
+O repositório é um **monorepo** com raiz em `proex/`. Cada projeto vive na sua própria pasta ali, junto com a pasta `DOCS/`. Os cinco projetos em C# ficam agrupados dentro de `OmniAI/` (uma solution única); os demais projetos são pastas irmãs, fora dela.
 
 ```
 proex/                        # raiz do monorepo
+├── README.md                 # ponto de entrada: o que é o projeto, como rodar, onde ler mais
 ├── DOCS/                     # esta documentação
-├── docker-compose.yml        # infra local: Postgres primary/réplica + Redis (ver 12-ambiente-local.md)
+├── docker-compose.yml        # sobe o sistema inteiro com um comando (ver 12-ambiente-local.md)
 ├── .env.example               # template das variáveis do docker-compose.yml (.env real é gitignored)
 ├── .gitignore
 ├── OmniAI/                   # backend .NET
-│   ├── OmniAI.slnx           # solution única, reúne os 4 projetos abaixo
+│   ├── OmniAI.slnx           # solution única, reúne os 5 projetos abaixo
 │   ├── Webhook/               # ingestão, autenticação por API Key, rate limit, fila (projeto Webhook)
 │   ├── Consumer/              # worker de fila + Hub do SignalR (projeto Consumer)
 │   ├── ApiGraphQL/            # login (JWT) + estatísticas via GraphQL (projeto ApiGraphQL)
+│   ├── Migrator/              # aplica as EF Core migrations e encerra — só roda dentro do docker-compose (ver abaixo)
 │   └── Shared/                # biblioteca compartilhada — entidades, DbContexts, contrato de evento (projeto Shared)
 ├── cockpit/                  # Dashboard React (Vite + TypeScript) — ver nota sobre o nome abaixo
 └── sdk-node/                  # SDK Node.js/TypeScript (pacote npm "omniai-sdk")
@@ -128,9 +130,15 @@ npm install -D typescript @types/node
 
 `package.json` usa `"type": "module"` (ESM) e expõe `dist/index.js` + `dist/index.d.ts` como entrada pública (`npm run build` roda `tsc`). O código-fonte fica em `src/`; `dist/` é gerado no build e não é versionado.
 
-## Infra local (Docker Compose)
+## `Migrator`: aplica as migrations e encerra
 
-`docker-compose.yml` + `.env.example` na raiz sobem Postgres (primary + réplica) e Redis para desenvolvimento — detalhado em [12-ambiente-local.md](12-ambiente-local.md). Não pertence a nenhum projeto específico porque é infraestrutura compartilhada por Webhook, Consumer e ApiGraphQL.
+`Migrator` é um console app minúsculo — não um serviço de vida longa — que conecta no banco de escrita, chama `WriteDbContext.Database.MigrateAsync()` e termina. Ele existe para resolver um problema específico do `docker compose up`: Webhook, Consumer e ApiGraphQL não podem começar a ler/escrever antes do schema existir, e nenhum dos três deveria ser responsável por rodar migration no próprio startup (rodar `Migrate()` a partir de três processos que sobem ao mesmo tempo cria uma corrida — dois tentando aplicar a mesma migration simultaneamente). `Migrator` roda uma única vez como uma etapa de inicialização do compose (`depends_on: condition: service_completed_successfully`), e só depois os três serviços de verdade começam a subir — ver [12-ambiente-local.md](12-ambiente-local.md).
+
+Fora do Docker Compose (desenvolvimento direto na máquina), continua valendo o fluxo manual de `dotnet ef database update` descrito abaixo.
+
+## Infra local e a aplicação inteira (Docker Compose)
+
+`docker-compose.yml` + `.env.example` na raiz sobem o sistema completo — Postgres (primary + réplica), Redis, os quatro serviços C# (via `Migrator` + `Webhook` + `Consumer` + `ApiGraphQL`) e o `cockpit` — com um único `docker compose up`, sem passo manual nenhum. Detalhado em [12-ambiente-local.md](12-ambiente-local.md). Não pertence a nenhum projeto específico porque orquestra todos eles.
 
 ## Onde cada decisão está documentada
 

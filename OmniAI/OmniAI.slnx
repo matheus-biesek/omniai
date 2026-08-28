@@ -6,6 +6,7 @@
   </Configurations>
   <Project Path="ApiGraphQL/ApiGraphQL.csproj" Id="afcbb54b-d75a-4b7c-a17a-13db7151e2c5" />
   <Project Path="Consumer/Consumer.csproj" Id="63a12bda-2851-4a54-88db-b8fe794929ff" />
+  <Project Path="Migrator/Migrator.csproj" />
   <Project Path="Shared/Shared.csproj" Id="7fa4c680-0259-4b89-b4fa-ed81efb2c062" />
   <Project Path="Webhook/Webhook.csproj" />
 </Solution>

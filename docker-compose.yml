@@ -14,13 +14,19 @@ services:
       - "${POSTGRES_PRIMARY_PORT}:5432"
     volumes:
       - postgres_primary_data:/bitnami/postgresql
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "${POSTGRES_USER}", "-d", "${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
 
   postgres-replica:
     image: bitnami/postgresql:latest
     container_name: omniai-postgres-replica
     restart: unless-stopped
     depends_on:
-      - postgres-primary
+      postgres-primary:
+        condition: service_healthy
     environment:
       POSTGRESQL_REPLICATION_MODE: slave
       POSTGRESQL_REPLICATION_USER: ${POSTGRES_REPLICATION_USER}
@@ -32,6 +38,11 @@ services:
       - "${POSTGRES_REPLICA_PORT}:5432"
     volumes:
       - postgres_replica_data:/bitnami/postgresql
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "${POSTGRES_USER}", "-d", "${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
 
   redis:
     image: redis:7-alpine
@@ -42,6 +53,119 @@ services:
       - "${REDIS_PORT}:6379"
     volumes:
       - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  # Aplica as EF Core migrations no banco de escrita e encerra - roda uma unica vez antes de
+  # qualquer servico que dependa do schema existir (ver DOCS/12-ambiente-local.md).
+  migrator:
+    build:
+      context: ./OmniAI
+      dockerfile: Migrator/Dockerfile
+    container_name: omniai-migrator
+    depends_on:
+      postgres-primary:
+        condition: service_healthy
+    environment:
+      ConnectionStrings__WriteDatabase: "Host=postgres-primary;Port=5432;Database=${POSTGRES_DB};Username=${POSTGRES_USER};Password=${POSTGRES_PASSWORD}"
+
+  webhook:
+    build:
+      context: ./OmniAI
+      dockerfile: Webhook/Dockerfile
+    container_name: omniai-webhook
+    restart: unless-stopped
+    depends_on:
+      migrator:
+        condition: service_completed_successfully
+      redis:
+        condition: service_healthy
+    environment:
+      ASPNETCORE_ENVIRONMENT: Production
+      ASPNETCORE_HTTP_PORTS: 8080
+      ConnectionStrings__WriteDatabase: "Host=postgres-primary;Port=5432;Database=${POSTGRES_DB};Username=${POSTGRES_USER};Password=${POSTGRES_PASSWORD}"
+      ConnectionStrings__Redis: "redis:6379"
+      ApiKeyHashing__PepperSecret: ${API_KEY_PEPPER_SECRET}
+      QueueBackpressure__StreamKey: usage-events
+      QueueBackpressure__MaxQueueSize: 10000
+      RateLimiting__PermitLimit: 100
+      RateLimiting__WindowSeconds: 60
+    ports:
+      - "${WEBHOOK_PORT}:8080"
+
+  consumer:
+    build:
+      context: ./OmniAI
+      dockerfile: Consumer/Dockerfile
+    container_name: omniai-consumer
+    restart: unless-stopped
+    depends_on:
+      migrator:
+        condition: service_completed_successfully
+      redis:
+        condition: service_healthy
+    environment:
+      ASPNETCORE_ENVIRONMENT: Production
+      ASPNETCORE_HTTP_PORTS: 8080
+      ConnectionStrings__WriteDatabase: "Host=postgres-primary;Port=5432;Database=${POSTGRES_DB};Username=${POSTGRES_USER};Password=${POSTGRES_PASSWORD}"
+      ConnectionStrings__Redis: "redis:6379"
+      Jwt__Issuer: OmniAI
+      Jwt__Audience: OmniAI.Dashboard
+      Jwt__SigningKey: ${JWT_SIGNING_KEY}
+      Queue__StreamKey: usage-events
+      Queue__ConsumerGroup: consumer-group
+      Queue__ConsumerName: consumer-1
+      Queue__BatchSize: 50
+      Retry__MaxAttempts: 5
+      Retry__BaseDelaySeconds: 10
+      Worker__PollIntervalMs: 500
+      Cors__AllowedOrigin: "http://localhost:${COCKPIT_PORT}"
+    ports:
+      - "${CONSUMER_PORT}:8080"
+
+  apigraphql:
+    build:
+      context: ./OmniAI
+      dockerfile: ApiGraphQL/Dockerfile
+    container_name: omniai-apigraphql
+    restart: unless-stopped
+    depends_on:
+      migrator:
+        condition: service_completed_successfully
+      postgres-replica:
+        condition: service_healthy
+    environment:
+      ASPNETCORE_ENVIRONMENT: Production
+      ASPNETCORE_HTTP_PORTS: 8080
+      ConnectionStrings__WriteDatabase: "Host=postgres-primary;Port=5432;Database=${POSTGRES_DB};Username=${POSTGRES_USER};Password=${POSTGRES_PASSWORD}"
+      ConnectionStrings__ReadDatabase: "Host=postgres-replica;Port=5432;Database=${POSTGRES_DB};Username=${POSTGRES_USER};Password=${POSTGRES_PASSWORD}"
+      Jwt__Issuer: OmniAI
+      Jwt__Audience: OmniAI.Dashboard
+      Jwt__SigningKey: ${JWT_SIGNING_KEY}
+      Jwt__ExpirationMinutes: 60
+      Dashboard__Username: ${DASHBOARD_USERNAME}
+      Dashboard__Password: ${DASHBOARD_PASSWORD}
+      ApiKeyHashing__PepperSecret: ${API_KEY_PEPPER_SECRET}
+      Cors__AllowedOrigin: "http://localhost:${COCKPIT_PORT}"
+    ports:
+      - "${APIGRAPHQL_PORT}:8080"
+
+  cockpit:
+    build:
+      context: ./cockpit
+      args:
+        VITE_GRAPHQL_URL: "http://localhost:${APIGRAPHQL_PORT}/graphql"
+        VITE_HUB_URL: "http://localhost:${CONSUMER_PORT}/hub"
+    container_name: omniai-cockpit
+    restart: unless-stopped
+    depends_on:
+      - apigraphql
+      - consumer
+    ports:
+      - "${COCKPIT_PORT}:80"
 
 volumes:
   postgres_primary_data:

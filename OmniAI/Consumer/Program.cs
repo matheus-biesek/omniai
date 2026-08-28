@@ -73,6 +73,19 @@ builder.Services
 
 builder.Services.AddAuthorization();
 
+// Mesma necessidade de CORS que a ApiGraphQL - o Cockpit conecta ao Hub direto do navegador.
+var allowedOrigin = builder.Configuration["Cors:AllowedOrigin"];
+builder.Services.AddCors(options =>
+{
+    options.AddDefaultPolicy(policy =>
+    {
+        if (!string.IsNullOrWhiteSpace(allowedOrigin))
+        {
+            policy.WithOrigins(allowedOrigin).AllowAnyHeader().AllowAnyMethod();
+        }
+    });
+});
+
 var app = builder.Build();
 
 // Configure the HTTP request pipeline.
@@ -82,6 +95,8 @@ if (app.Environment.IsDevelopment())
 }
 
 app.UseHttpsRedirection();
+
+app.UseCors();
 
 app.UseAuthentication();
 app.UseAuthorization();
