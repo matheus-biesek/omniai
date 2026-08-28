@@ -61,6 +61,27 @@ Resumindo a regra: **segredo de desenvolvimento pode e deve estar no repositóri
 
 - Toda comunicação entre SDK, Webhook, API GraphQL e Frontend deve ocorrer sobre **HTTPS/WSS** em qualquer ambiente que não seja desenvolvimento local.
 
+## Autenticação do Cockpit (frontend): limitação conhecida
+
+O token JWT emitido pelo `login` é guardado no `sessionStorage` do navegador (`cockpit/src/features/auth/authStorage.ts`) e enviado em todas as chamadas GraphQL/SignalR via header `Authorization: Bearer`. Essa é uma decisão consciente, não um descuido — e vale documentar o porquê e o trade-off, porque este é um projeto Open Source e quem for rodar em produção precisa decidir com informação.
+
+**O que isso significa na prática:**
+
+- O token fica acessível a qualquer JavaScript executado na página — se existir uma vulnerabilidade de XSS no Cockpit (ou em uma dependência dele), o token pode ser roubado. Um token em cookie `httpOnly` não teria esse problema, porque JavaScript não consegue lê-lo.
+- Em compensação, `sessionStorage` some ao fechar a aba e não é enviado automaticamente pelo navegador em toda requisição (diferente de cookie), o que elimina a superfície de CSRF por completo — não existe cookie de sessão para um site malicioso "andar de carona".
+- Não há refresh token: o JWT expira em 60 minutos (mesmo valor do `ExpirationMinutes` em [06-modulo-api.md](06-modulo-api.md)) e o usuário precisa logar de novo. Não há sessão persistente entre abas ou entre fechar/abrir o navegador.
+
+**Por que não implementamos a alternativa mais robusta agora:** a alternativa correta para produção — access token + cookie `httpOnly` de refresh token + validação CSRF via double-submit (token replicado num header customizado, comparado com o valor do cookie) — exige que frontend e backend compartilhem um domínio pai comum (ex: `app.empresa.com` e `api.empresa.com` sob `empresa.com`), porque cookies não atravessam domínios não relacionados. Essa topologia de domínio é **específica de cada empresa que for self-host o OmniAI** — não existe um valor padrão razoável para "qual é o seu domínio pai" num projeto Open Source genérico. Forçar essa arquitetura agora tornaria o setup local e o primeiro deploy mais difíceis sem necessidade.
+
+**Recomendação para produção:** empresas que forem colocar o Cockpit em produção com requisitos de segurança mais estritos devem migrar para o esquema acima:
+
+1. Refresh token opaco, armazenado no Redis (permite revogação imediata — algo que um JWT autocontido não permite), entregue **apenas** pela rota de refresh, nunca pelo endpoint de login.
+2. Refresh token em cookie `httpOnly` + `Secure` + `SameSite=Strict`, escopado ao domínio pai.
+3. CSRF token de dupla submissão: um valor gerado no login, devolvido tanto em cookie (não-`httpOnly`, para o JS conseguir ler) quanto esperado num header customizado (ex: `X-CSRF-Token`) em toda mutation — o backend rejeita se os dois não baterem.
+4. Access token (JWT) continua de vida curta, mas agora renovável silenciosamente via refresh, sem precisar logar de novo a cada hora.
+
+Essa é uma extensão da autenticação existente, não uma reescrita — o `LoginUseCase`, o JWT e o `RequireAuthenticated()` (ver [06-modulo-api.md](06-modulo-api.md)) continuam os mesmos; o que muda é como o token chega e se renova no cliente.
+
 ## Superfícies de ataque consideradas
 
 | Ameaça | Mitigação |
@@ -70,3 +91,4 @@ Resumindo a regra: **segredo de desenvolvimento pode e deve estar no repositóri
 | Sobrecarga do Consumer/fila (DoS por volume) | Backpressure via `XLEN` rejeita novos eventos além do limite configurado. |
 | Enumeração de credenciais de login | Mensagem de erro genérica no `login`. |
 | Payload malformado ou malicioso no Webhook | Validação de schema antes de qualquer processamento ou persistência. |
+| Roubo do JWT via XSS no Cockpit | Aceito como limitação conhecida do MVP (token em `sessionStorage`); mitigação recomendada para produção documentada acima. |
