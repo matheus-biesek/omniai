@@ -39,3 +39,7 @@ SDK (sua aplicação) → Webhook → Redis → Consumer → Postgres → API Gr
 A pasta [DOCS/](DOCS/README.md) é a fonte de verdade do projeto: por que cada decisão de arquitetura foi tomada, como cada módulo funciona por dentro, modelo de dados, segurança, estrutura do repositório. Comece por [DOCS/01-visao-geral.md](DOCS/01-visao-geral.md).
 
 Este README fica só na porta de entrada — "o que é isso" e "como eu rodo". Regra de negócio e decisão técnica vivem em `DOCS/` (ou no próprio código).
+
+## Licença
+
+[MIT](LICENSE).
