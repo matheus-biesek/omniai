@@ -67,7 +67,7 @@ public class ProcessarEventoDeUsoUseCase
 
             try
             {
-                await _notifier.NotifyAsync(saved, cancellationToken);
+                await _notifier.NotifyAsync(saved, message.Project, cancellationToken);
             }
             catch (Exception notifyEx)
             {

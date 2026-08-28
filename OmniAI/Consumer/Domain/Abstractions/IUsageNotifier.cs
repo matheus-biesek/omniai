@@ -4,5 +4,5 @@ namespace Consumer.Domain.Abstractions;
 
 public interface IUsageNotifier
 {
-    Task NotifyAsync(UsageRecord record, CancellationToken cancellationToken);
+    Task NotifyAsync(UsageRecord record, string projectName, CancellationToken cancellationToken);
 }

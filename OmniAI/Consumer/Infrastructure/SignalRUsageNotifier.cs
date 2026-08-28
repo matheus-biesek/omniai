@@ -14,7 +14,7 @@ public class SignalRUsageNotifier : IUsageNotifier
         _hubContext = hubContext;
     }
 
-    public Task NotifyAsync(UsageRecord record, CancellationToken cancellationToken)
+    public Task NotifyAsync(UsageRecord record, string projectName, CancellationToken cancellationToken)
     {
         return _hubContext.Clients.All.SendAsync(
             "UsageReceived",
@@ -22,6 +22,7 @@ public class SignalRUsageNotifier : IUsageNotifier
             {
                 record.Id,
                 record.ProjectId,
+                Project = projectName,
                 record.Provider,
                 record.Model,
                 record.PromptTokens,
