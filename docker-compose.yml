@@ -148,6 +148,8 @@ services:
       Jwt__ExpirationMinutes: 60
       Dashboard__Username: ${DASHBOARD_USERNAME}
       Dashboard__Password: ${DASHBOARD_PASSWORD}
+      LoginRateLimit__PermitLimit: 10
+      LoginRateLimit__WindowSeconds: 60
       ApiKeyHashing__PepperSecret: ${API_KEY_PEPPER_SECRET}
       Cors__AllowedOrigin: "http://localhost:${COCKPIT_PORT}"
     ports:

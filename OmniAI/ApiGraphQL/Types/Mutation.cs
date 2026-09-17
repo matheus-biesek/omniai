@@ -8,9 +8,13 @@ namespace ApiGraphQL.Types;
 
 public class Mutation
 {
-    public LoginPayload Login(string username, string password, LoginUseCase useCase)
+    public LoginPayload Login(string username, string password, LoginUseCase useCase, IHttpContextAccessor httpContextAccessor)
     {
-        var token = useCase.Executar(username, password);
+        // Atras de proxy reverso todos os clientes chegam com o IP do proxy - mesma limitacao do rate
+        // limit por IP do Webhook (ver 09-seguranca.md).
+        var clientKey = httpContextAccessor.HttpContext?.Connection.RemoteIpAddress?.ToString() ?? "unknown";
+
+        var token = useCase.Executar(username, password, clientKey);
         return new LoginPayload(token);
     }
 

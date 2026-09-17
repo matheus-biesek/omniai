@@ -1,4 +1,7 @@
 import { execFileSync } from "node:child_process";
+import { readFileSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 
 export const GRAPHQL_URL = process.env.E2E_GRAPHQL_URL ?? "http://localhost:5300/graphql";
 export const WEBHOOK_URL = process.env.E2E_WEBHOOK_URL ?? "http://localhost:5100";
@@ -26,15 +29,30 @@ export async function gql(query, variables = {}, token = null) {
   return { status: res.status, data: body.data, errors: body.errors };
 }
 
+// Cada arquivo de teste roda num processo separado. O token fica num arquivo temporario para nao
+// gastar uma tentativa de login por arquivo - a API limita tentativas de login por IP.
+const TOKEN_CACHE = join(tmpdir(), "omniai-e2e-token.json");
 let cachedToken = null;
 export async function login() {
   if (cachedToken) return cachedToken;
+
+  try {
+    const { token, expiresAt } = JSON.parse(readFileSync(TOKEN_CACHE, "utf8"));
+    if (expiresAt - Date.now() > 5 * 60_000 && (await gql("{ projects { id } }", {}, token)).errors === undefined) {
+      return (cachedToken = token);
+    }
+  } catch {
+    // sem cache valido - faz login
+  }
+
   const { data, errors } = await gql(
     "mutation($u: String!, $p: String!) { login(username: $u, password: $p) { token } }",
     { u: DASHBOARD_USERNAME, p: DASHBOARD_PASSWORD },
   );
   if (errors) throw new Error(`login falhou: ${JSON.stringify(errors)}`);
   cachedToken = data.login.token;
+  const { exp } = JSON.parse(Buffer.from(cachedToken.split(".")[1], "base64url").toString());
+  writeFileSync(TOKEN_CACHE, JSON.stringify({ token: cachedToken, expiresAt: exp * 1000 }));
   return cachedToken;
 }
 
