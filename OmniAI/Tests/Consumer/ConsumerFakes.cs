@@ -41,15 +41,21 @@ internal sealed class FakeUsageEventLogRepository : IUsageEventLogRepository
     public Exception? ThrowOnMarkProcessed { get; set; }
     public Func<UsageEventLog, bool>? FailAddWhen { get; set; }
 
-    public Task AddAsync(UsageEventLog log, CancellationToken cancellationToken)
+    public Task<bool> TryAddAsync(UsageEventLog log, CancellationToken cancellationToken)
     {
         if (FailAddWhen?.Invoke(log) == true)
         {
             throw new InvalidOperationException("falha simulada ao gravar log");
         }
 
+        // Espelha o indice unico de RedisEntryId do banco.
+        if (Added.Any(l => l.RedisEntryId == log.RedisEntryId))
+        {
+            return Task.FromResult(false);
+        }
+
         Added.Add(log);
-        return Task.CompletedTask;
+        return Task.FromResult(true);
     }
 
     public Task<IReadOnlyList<UsageEventLog>> GetDueForProcessingAsync(int maxBatchSize, CancellationToken cancellationToken)

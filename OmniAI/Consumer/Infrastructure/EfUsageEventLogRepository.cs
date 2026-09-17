@@ -14,10 +14,21 @@ public class EfUsageEventLogRepository : IUsageEventLogRepository
         _dbContext = dbContext;
     }
 
-    public async Task AddAsync(UsageEventLog log, CancellationToken cancellationToken)
+    public async Task<bool> TryAddAsync(UsageEventLog log, CancellationToken cancellationToken)
     {
-        _dbContext.UsageEventLogs.Add(log);
-        await _dbContext.SaveChangesAsync(cancellationToken);
+        // INSERT ... ON CONFLICT direto, em vez de Add + SaveChanges: a checagem de duplicidade e
+        // atomica no banco (indice unico em RedisEntryId) e uma entrada repetida nao deixa entidade
+        // rastreada no change tracker - o que envenenaria o resto do lote, que compartilha este
+        // DbContext no worker.
+        var inserted = await _dbContext.Database.ExecuteSqlAsync(
+            $"""
+            INSERT INTO usage_event_logs ("Id", "RedisEntryId", "Payload", "Status", "AttemptCount", "ReceivedAt")
+            VALUES ({log.Id}, {log.RedisEntryId}, {log.Payload}, {(int)log.Status}, {log.AttemptCount}, {log.ReceivedAt})
+            ON CONFLICT ("RedisEntryId") DO NOTHING
+            """,
+            cancellationToken);
+
+        return inserted == 1;
     }
 
     public async Task<IReadOnlyList<UsageEventLog>> GetDueForProcessingAsync(int maxBatchSize, CancellationToken cancellationToken)

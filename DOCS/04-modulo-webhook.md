@@ -44,6 +44,7 @@ senão:
     responder 202 Accepted
 ```
 
+- **`XLEN` só mede o que falta processar porque o Consumer apaga o que já processou.** `XLEN` conta todas as entradas da stream, inclusive as já confirmadas com `XACK` — confirmar não remove nada. Por isso o Consumer faz `XACK` + `XDEL` juntos assim que o evento está gravado em `usage_event_logs` (ver [05-modulo-consumer.md](05-modulo-consumer.md#fase-a--registrar-registrareventousecase)). Sem o `XDEL`, a stream cresceria para sempre e, ao atingir `LIMITE_MAXIMO_FILA` eventos **desde sempre**, o Webhook passaria a responder 503 a tudo. Limitar a stream no `XADD` (`MAXLEN`) não resolveria: descartaria eventos ainda não lidos.
 - `LIMITE_MAXIMO_FILA` é configurável via variável de ambiente, ajustado conforme a capacidade de processamento do Consumer.
 - Essa checagem **não precisa de nenhum algoritmo complexo, cache adicional ou serviço externo** — o próprio Redis já mantém o contador de tamanho da stream de forma eficiente; o Webhook só faz uma leitura desse contador a cada requisição.
 - Um segundo rate limit (distinto do rate limit por IP do passo 1) pode ser aplicado especificamente sobre a taxa de publicação na fila, se necessário — mas a checagem de `XLEN` já cobre o cenário principal (fila cheia) sem exigir uma camada extra.

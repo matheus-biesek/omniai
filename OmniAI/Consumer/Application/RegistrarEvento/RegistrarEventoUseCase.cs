@@ -12,7 +12,11 @@ public class RegistrarEventoUseCase
         _repository = repository;
     }
 
-    public async Task ExecutarAsync(string redisEntryId, string payload, CancellationToken cancellationToken)
+    /// <returns>
+    /// true se o evento foi registrado agora; false se essa entrada do Redis ja estava registrada
+    /// (releitura depois de um XACK que falhou) - nos dois casos a entrada pode ser confirmada.
+    /// </returns>
+    public Task<bool> ExecutarAsync(string redisEntryId, string payload, CancellationToken cancellationToken)
     {
         var log = new UsageEventLog
         {
@@ -24,6 +28,6 @@ public class RegistrarEventoUseCase
             ReceivedAt = DateTime.UtcNow,
         };
 
-        await _repository.AddAsync(log, cancellationToken);
+        return _repository.TryAddAsync(log, cancellationToken);
     }
 }

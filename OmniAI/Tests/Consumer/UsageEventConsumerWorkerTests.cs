@@ -53,16 +53,35 @@ public class UsageEventConsumerWorkerTests
             }
         }
 
+        public HashSet<string> FailAckOnceFor { get; } = new();
+        public int RemoveAcknowledgedCalls { get; private set; }
+        public bool ThrowOnRemoveAcknowledged { get; set; }
+
         public Task AcknowledgeAsync(string entryId, CancellationToken cancellationToken)
         {
             lock (_lock)
             {
+                if (FailAckOnceFor.Remove(entryId))
+                {
+                    throw new RedisConnectionExceptionSimulada();
+                }
+
                 Acked.Add(entryId);
             }
 
             return Task.CompletedTask;
         }
+
+        public Task RemoveAcknowledgedAsync(CancellationToken cancellationToken)
+        {
+            RemoveAcknowledgedCalls++;
+            return ThrowOnRemoveAcknowledged
+                ? Task.FromException(new RedisConnectionExceptionSimulada())
+                : Task.CompletedTask;
+        }
     }
+
+    private sealed class RedisConnectionExceptionSimulada() : Exception("redis caiu no XACK");
 
     private static async Task RodarWorkerPor(FakeReader reader, FakeUsageEventLogRepository logs, TimeSpan duracao)
     {
@@ -128,6 +147,39 @@ public class UsageEventConsumerWorkerTests
         Assert.Equal(new HashSet<string> { "1-0", "2-0", "3-0" }, reader.Acked);
         Assert.Equal(1, logs.Added.Count(l => l.RedisEntryId == "2-0"));
         Assert.Equal(3, logs.Added.Count);
+    }
+
+    [Fact]
+    public async Task AckFalhaDepoisDoLogGravado_EntradaRelida_NaoDuplicaLog_EEhConfirmadaDepois()
+    {
+        var reader = new FakeReader(new[]
+        {
+            new PendingRedisEntry("1-0", "p1"),
+            new PendingRedisEntry("2-0", "p2"),
+        });
+        reader.FailAckOnceFor.Add("1-0");
+        var logs = new FakeUsageEventLogRepository();
+
+        await RodarWorkerPor(reader, logs, TimeSpan.FromMilliseconds(400));
+
+        Assert.Equal(1, logs.Added.Count(l => l.RedisEntryId == "1-0"));
+        Assert.Equal(2, logs.Added.Count);
+        Assert.Equal(new HashSet<string> { "1-0", "2-0" }, reader.Acked);
+    }
+
+    [Fact]
+    public async Task AoIniciar_RemoveEntradasJaConfirmadasDaStream_EFalhaNissoNaoDerrubaOWorker()
+    {
+        var reader = new FakeReader(new[] { new PendingRedisEntry("1-0", "p1") })
+        {
+            ThrowOnRemoveAcknowledged = true,
+        };
+        var logs = new FakeUsageEventLogRepository();
+
+        await RodarWorkerPor(reader, logs, TimeSpan.FromMilliseconds(300));
+
+        Assert.Equal(1, reader.RemoveAcknowledgedCalls);
+        Assert.Contains("1-0", reader.Acked);
     }
 
     [Fact]

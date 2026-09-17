@@ -28,6 +28,18 @@ public class UsageEventConsumerWorker : BackgroundService
     {
         await _reader.EnsureConsumerGroupAsync(stoppingToken);
 
+        try
+        {
+            // Entradas ja confirmadas que ficaram na stream (ex: de versoes que so faziam XACK, sem
+            // XDEL) ainda contam no XLEN do backpressure do Webhook. Limpeza e so manutencao: se
+            // falhar, o worker segue normalmente.
+            await _reader.RemoveAcknowledgedAsync(stoppingToken);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            _logger.LogWarning(ex, "Nao foi possivel remover da stream as entradas ja confirmadas.");
+        }
+
         while (!stoppingToken.IsCancellationRequested)
         {
             try
@@ -65,7 +77,12 @@ public class UsageEventConsumerWorker : BackgroundService
         {
             try
             {
-                await useCase.ExecutarAsync(entrada.EntryId, entrada.Payload, cancellationToken);
+                var registradoAgora = await useCase.ExecutarAsync(entrada.EntryId, entrada.Payload, cancellationToken);
+                if (!registradoAgora)
+                {
+                    _logger.LogInformation("Evento {EntryId} ja estava registrado (confirmacao anterior falhou), so confirmando.", entrada.EntryId);
+                }
+
                 await _reader.AcknowledgeAsync(entrada.EntryId, cancellationToken);
             }
             catch (Exception ex)

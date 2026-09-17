@@ -100,6 +100,116 @@ public class RedisQueueIntegrationTests : IAsyncLifetime
     }
 
     [Fact]
+    public async Task FilaVoltaATerEspaco_DepoisQueOConsumerConfirmaAsMensagens()
+    {
+        // Backpressure deve medir o que ainda nao foi processado - nao o total historico da stream.
+        var publisher = Publisher(maxQueueSize: 3);
+        var reader = Reader();
+        await reader.EnsureConsumerGroupAsync(CancellationToken.None);
+
+        for (var i = 0; i < 3; i++)
+        {
+            Assert.Equal(PublishOutcome.Published, await publisher.PublishAsync(Message(i), CancellationToken.None));
+        }
+
+        Assert.Equal(PublishOutcome.QueueFull, await publisher.PublishAsync(Message(99), CancellationToken.None));
+
+        foreach (var entry in await reader.ReadNewAsync(CancellationToken.None))
+        {
+            await reader.AcknowledgeAsync(entry.EntryId, CancellationToken.None);
+        }
+
+        Assert.Equal(PublishOutcome.Published, await publisher.PublishAsync(Message(100), CancellationToken.None));
+    }
+
+    [Fact]
+    public async Task Acknowledge_RemoveAEntradaDaStream()
+    {
+        var reader = Reader();
+        await reader.EnsureConsumerGroupAsync(CancellationToken.None);
+        await Publisher(100).PublishAsync(Message(1), CancellationToken.None);
+
+        var entry = Assert.Single(await reader.ReadNewAsync(CancellationToken.None));
+        await reader.AcknowledgeAsync(entry.EntryId, CancellationToken.None);
+
+        var db = _fixture.Redis.GetDatabase();
+        Assert.Equal(0, await db.StreamLengthAsync(_stream));
+        Assert.Equal(0, (await db.StreamPendingAsync(_stream, "group-test")).PendingMessageCount);
+    }
+
+    [Fact]
+    public async Task RemoveAcknowledged_ApagaSoAsJaConfirmadas_PreservaPendentesENaoLidas()
+    {
+        var db = _fixture.Redis.GetDatabase();
+        var reader = Reader();
+        await reader.EnsureConsumerGroupAsync(CancellationToken.None);
+        var publisher = Publisher(100);
+
+        await publisher.PublishAsync(Message(1), CancellationToken.None);
+        await publisher.PublishAsync(Message(2), CancellationToken.None);
+        await publisher.PublishAsync(Message(3), CancellationToken.None);
+        var entregues = await reader.ReadNewAsync(CancellationToken.None);
+
+        // Confirmacao "a moda antiga" (so XACK), como faziam as versoes anteriores do Consumer.
+        await db.StreamAcknowledgeAsync(_stream, "group-test", entregues[0].EntryId);
+        await db.StreamAcknowledgeAsync(_stream, "group-test", entregues[1].EntryId);
+        await publisher.PublishAsync(Message(4), CancellationToken.None); // ainda nao lida
+        Assert.Equal(4, await db.StreamLengthAsync(_stream));
+
+        await reader.RemoveAcknowledgedAsync(CancellationToken.None);
+
+        Assert.Equal(2, await db.StreamLengthAsync(_stream));
+        Assert.Equal(entregues[2].EntryId, Assert.Single(await reader.ReadOwnPendingAsync(CancellationToken.None)).EntryId);
+        Assert.Equal(4, JsonSerializer.Deserialize<UsageEventMessage>(Assert.Single(await reader.ReadNewAsync(CancellationToken.None)).Payload)!.TotalTokens);
+    }
+
+    [Fact]
+    public async Task RemoveAcknowledged_SemPendentes_ApagaAteAUltimaEntregue()
+    {
+        var db = _fixture.Redis.GetDatabase();
+        var reader = Reader();
+        await reader.EnsureConsumerGroupAsync(CancellationToken.None);
+        var publisher = Publisher(100);
+
+        await publisher.PublishAsync(Message(1), CancellationToken.None);
+        await publisher.PublishAsync(Message(2), CancellationToken.None);
+        foreach (var e in await reader.ReadNewAsync(CancellationToken.None))
+        {
+            await db.StreamAcknowledgeAsync(_stream, "group-test", e.EntryId);
+        }
+
+        await publisher.PublishAsync(Message(3), CancellationToken.None);
+
+        await reader.RemoveAcknowledgedAsync(CancellationToken.None);
+
+        Assert.Equal(1, await db.StreamLengthAsync(_stream));
+        Assert.Single(await reader.ReadNewAsync(CancellationToken.None));
+    }
+
+    [Fact]
+    public async Task RemoveAcknowledged_StreamVazia_NaoFazNada()
+    {
+        var reader = Reader();
+        await reader.EnsureConsumerGroupAsync(CancellationToken.None);
+
+        await reader.RemoveAcknowledgedAsync(CancellationToken.None);
+
+        Assert.Equal(0, await _fixture.Redis.GetDatabase().StreamLengthAsync(_stream));
+    }
+
+    [Fact]
+    public async Task MensagensPublicadasAntesDoConsumerGroupExistir_NaoSaoPerdidas()
+    {
+        // Primeiro boot: o Webhook pode aceitar eventos antes do Consumer criar o grupo.
+        await Publisher(100).PublishAsync(Message(1), CancellationToken.None);
+
+        var reader = Reader();
+        await reader.EnsureConsumerGroupAsync(CancellationToken.None);
+
+        Assert.Single(await reader.ReadNewAsync(CancellationToken.None));
+    }
+
+    [Fact]
     public async Task ConsumerGroupCriadoAntesDaStreamExistir_NaoPerdeMensagensPublicadasDepois()
     {
         var reader = Reader();
