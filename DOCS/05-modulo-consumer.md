@@ -16,10 +16,15 @@ O Consumer não processa o evento direto na leitura do Redis. Ele separa isso em
 ### Fase A — Registrar (`RegistrarEventoUseCase`)
 
 1. Lê o Redis Stream via **consumer group** (`XREADGROUP`) — primeiro as próprias pendências do processo (`0`, cobre reinício após queda), depois mensagens novas (`>`).
-2. Grava o payload **cru** (string, sem desserializar) numa tabela `usage_event_logs`, com status `Pendente`.
-3. Só **depois** disso confirma a leitura (`XACK`).
+2. Grava o payload **cru** (string, sem desserializar) numa tabela `usage_event_logs`, com status `Pendente` — **no máximo uma vez por entrada do Redis** (ver [Idempotência](#idempotência)).
+3. Só **depois** disso confirma a leitura e remove a entrada da stream (`XACK` + `XDEL`, numa transação `MULTI/EXEC`).
 
-Se o passo 2 falhar (ex: Postgres fora do ar), o `XACK` não é enviado — a mensagem continua pendente no Redis e é relida no próximo ciclo. A partir do momento em que a mensagem está em `usage_event_logs`, o Redis já cumpriu seu papel: a garantia de "nada se perde" passa a ser do Postgres, não mais do Redis.
+Se o passo 2 falhar (ex: Postgres fora do ar), nada é confirmado — a mensagem continua pendente no Redis e é relida no próximo ciclo. A partir do momento em que a mensagem está em `usage_event_logs`, o Redis já cumpriu seu papel: a garantia de "nada se perde" passa a ser do Postgres, não mais do Redis. É por isso que a entrada pode ser apagada (`XDEL`) — e precisa ser: o backpressure do Webhook usa `XLEN`, que conta entradas confirmadas também (ver [04-modulo-webhook.md](04-modulo-webhook.md#backpressure-da-fila)).
+
+Dois detalhes do consumer group:
+
+- Ele é criado a partir do **início** da stream (`0`), não só com mensagens novas (`$`): no primeiro boot, o Webhook pode aceitar eventos antes de o Consumer criar o grupo, e com `$` esses eventos nunca seriam lidos.
+- Ao iniciar, o Consumer remove da stream entradas já entregues e confirmadas que tenham ficado para trás (`XTRIM MINID` até a menor pendência, ou até a última entregue se não houver pendências). Isso limpa ambientes criados antes do `XDEL` existir; pendências e mensagens não lidas nunca são tocadas. Se essa limpeza falhar, o worker segue normalmente.
 
 ### Fase B — Processar (`ProcessarEventoDeUsoUseCase`)
 
@@ -42,7 +47,11 @@ A cada ciclo, busca em `usage_event_logs` as linhas com status `Pendente` ou `Fa
 
 ## Idempotência
 
-Cada `UsageRecord` referencia o `usage_event_logs` que o originou (`SourceEventLogId`, com índice único no banco). Antes de criar um `UsageRecord`, o Use Case verifica se já existe um para aquele log — isso protege contra reprocessamento duplicado (ex: o log foi persistido e o `UsageRecord` criado com sucesso, mas o processo caiu antes de marcar o log como `Processado`; no próximo ciclo, o mesmo log seria pego de novo, e sem essa checagem duplicaria o registro).
+São duas proteções, uma em cada fase — as duas são necessárias para que um mesmo evento nunca seja contado duas vezes no dashboard:
+
+**Fase A — uma entrada do Redis gera no máximo um log.** `usage_event_logs.RedisEntryId` tem índice único, e o registro é um `INSERT ... ON CONFLICT ("RedisEntryId") DO NOTHING`. O cenário que isso cobre: o log foi gravado, mas o `XACK` falhou (Redis caiu, processo morreu entre um e outro). A entrada continua pendente e volta na leitura `0` do próximo ciclo; sem o índice único, viraria um segundo log com outro `Id` — e a proteção da Fase B, que olha o `Id` do log, não pegaria a duplicata. Com o índice, a releitura não grava nada e só refaz a confirmação. O `ON CONFLICT` (em vez de `Add` + `SaveChanges` tratando a exceção) também evita deixar uma entidade rejeitada rastreada no `DbContext` compartilhado pelo lote (ver o cuidado abaixo).
+
+**Fase B — um log gera no máximo um `UsageRecord`.** Cada `UsageRecord` referencia o `usage_event_logs` que o originou (`SourceEventLogId`, com índice único no banco). Antes de criar um `UsageRecord`, o Use Case verifica se já existe um para aquele log — isso protege contra reprocessamento duplicado (ex: o log foi persistido e o `UsageRecord` criado com sucesso, mas o processo caiu antes de marcar o log como `Processado`; no próximo ciclo, o mesmo log seria pego de novo, e sem essa checagem duplicaria o registro).
 
 ## Um cuidado de implementação: DbContext compartilhado entre repositórios
 

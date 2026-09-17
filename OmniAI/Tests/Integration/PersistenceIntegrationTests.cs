@@ -41,7 +41,7 @@ public class PersistenceIntegrationTests : IAsyncLifetime
         var log = new UsageEventLog
         {
             Id = Guid.NewGuid(),
-            RedisEntryId = $"{receivedAt.Ticks}-0",
+            RedisEntryId = $"{receivedAt.Ticks}-{Guid.NewGuid():N}",
             Payload = "{}",
             Status = status,
             ReceivedAt = receivedAt,
@@ -280,8 +280,8 @@ public class PersistenceIntegrationTests : IAsyncLifetime
         Assert.Empty(ctx.ChangeTracker.Entries());
 
         // Mesmo contexto continua utilizavel
-        var outro = new UsageEventLog { Id = Guid.NewGuid(), RedisEntryId = "x", Payload = "{}", ReceivedAt = DateTime.UtcNow };
-        await new EfUsageEventLogRepository(ctx).AddAsync(outro, CancellationToken.None);
+        ctx.UsageEventLogs.Add(new UsageEventLog { Id = Guid.NewGuid(), RedisEntryId = "x", Payload = "{}", ReceivedAt = DateTime.UtcNow });
+        await ctx.SaveChangesAsync();
     }
 
     [Fact]

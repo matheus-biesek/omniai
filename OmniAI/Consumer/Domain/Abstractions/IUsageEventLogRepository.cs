@@ -4,7 +4,8 @@ namespace Consumer.Domain.Abstractions;
 
 public interface IUsageEventLogRepository
 {
-    Task AddAsync(UsageEventLog log, CancellationToken cancellationToken);
+    /// <summary>Grava o log; retorna false (sem gravar) se ja existe log para a mesma entrada do Redis.</summary>
+    Task<bool> TryAddAsync(UsageEventLog log, CancellationToken cancellationToken);
 
     Task<IReadOnlyList<UsageEventLog>> GetDueForProcessingAsync(int maxBatchSize, CancellationToken cancellationToken);
 

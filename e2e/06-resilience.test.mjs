@@ -22,6 +22,10 @@ describe("Resiliencia", () => {
       return s.totalRequests === 3 ? s : null;
     }, { timeoutMs: 60000, intervalMs: 1000, description: "3 eventos processados apos o Consumer voltar" });
     assert.equal(stats.totalTokens, 30);
+
+    // Entradas processadas saem da stream - senao o XLEN do backpressure so cresce e o Webhook
+    // passa a recusar tudo ao atingir MaxQueueSize.
+    await waitFor(() => redisCli("XLEN", "usage-events") === "0", { description: "stream do Redis esvaziar" });
   });
 
   it("replica de leitura esta em modo standby (replicacao nativa ativa)", () => {
