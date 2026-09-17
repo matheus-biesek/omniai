@@ -1,6 +1,6 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
-import { COCKPIT_URL, createProject, gql, login, uniqueName } from "./helpers.mjs";
+import { COCKPIT_URL, DASHBOARD_PASSWORD, DASHBOARD_USERNAME, createProject, gql, login, uniqueName } from "./helpers.mjs";
 
 describe("Cockpit (nginx)", () => {
   it("serve o index.html", async () => {
@@ -25,7 +25,13 @@ describe("API GraphQL - autenticacao", () => {
   });
 
   it("login com credenciais corretas emite JWT", async () => {
-    const token = await login();
+    // login direto, sem o cache do helper, para checar a expiracao de um token recem-emitido
+    const { data, errors } = await gql(
+      "mutation($u: String!, $p: String!) { login(username: $u, password: $p) { token } }",
+      { u: DASHBOARD_USERNAME, p: DASHBOARD_PASSWORD },
+    );
+    assert.equal(errors, undefined, JSON.stringify(errors));
+    const token = data.login.token;
     assert.equal(token.split(".").length, 3);
     const claims = JSON.parse(Buffer.from(token.split(".")[1], "base64url").toString());
     assert.equal(claims.sub, "admin");

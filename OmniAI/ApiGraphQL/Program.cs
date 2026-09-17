@@ -33,8 +33,10 @@ builder.Services.AddDbContext<WriteDbContext>(options =>
 builder.Services.Configure<DashboardCredentialsOptions>(builder.Configuration.GetSection(DashboardCredentialsOptions.SectionName));
 builder.Services.Configure<JwtOptions>(builder.Configuration.GetSection(JwtOptions.SectionName));
 builder.Services.Configure<ApiKeyHashingOptions>(builder.Configuration.GetSection(ApiKeyHashingOptions.SectionName));
+builder.Services.Configure<LoginRateLimitOptions>(builder.Configuration.GetSection(LoginRateLimitOptions.SectionName));
 
 builder.Services.AddSingleton<IJwtTokenGenerator, JwtTokenGenerator>();
+builder.Services.AddSingleton<ILoginAttemptLimiter, FixedWindowLoginAttemptLimiter>();
 builder.Services.AddScoped<IUsageStatisticsRepository, EfUsageStatisticsRepository>();
 builder.Services.AddScoped<IProjectRepository, EfProjectRepository>();
 builder.Services.AddScoped<IApiKeyRepository, EfApiKeyRepository>();
@@ -91,6 +93,7 @@ builder.Services
         // qualquer outra excecao continua com a mensagem generica padrao do HotChocolate, para
         // nao vazar detalhe interno de implementacao.
         if (error.Exception is InvalidCredentialsException
+            or TooManyLoginAttemptsException
             or UnauthorizedAccessException
             or ProjectNameAlreadyExistsException
             or ProjectNotFoundException

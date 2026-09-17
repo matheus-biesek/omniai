@@ -24,6 +24,8 @@ Duas camadas independentes, ambas no Webhook:
 1. **Por IP de origem** — middleware nativo do ASP.NET Core (`Microsoft.AspNetCore.RateLimiting`), limitando requisições por janela de tempo por IP. Mitiga abuso e tentativas de força bruta contra a API Key.
 2. **Backpressure da fila** — verificação do tamanho atual do Redis Stream (`XLEN`, O(1)) antes de aceitar um novo evento. Detalhado em [04-modulo-webhook.md](04-modulo-webhook.md#backpressure-da-fila). Não é um rate limit por identidade, e sim uma proteção de capacidade do sistema como um todo.
 
+Na API GraphQL, o `login` tem seu próprio limite de tentativas por IP — ver [Autenticação do Dashboard](#autenticação-do-dashboard-login).
+
 ## Validação de entrada
 
 Toda borda do sistema que recebe dado externo valida antes de processar:
@@ -36,6 +38,7 @@ Toda borda do sistema que recebe dado externo valida antes de processar:
 - Credencial única (usuário/senha) definida em variável de ambiente do serviço da API — não há tabela de usuários no banco, então não há senha para vazar em caso de comprometimento do banco de dados.
 - Login bem-sucedido emite um **JWT de curta duração**, exigido em todas as demais chamadas GraphQL e na conexão SignalR.
 - Mensagens de erro de login são genéricas (não revelam se o usuário ou a senha estavam incorretos), para dificultar enumeração.
+- Credenciais comparadas em tempo constante, e **limite de tentativas de login por IP** (padrão 10 a cada 60s) — sem ele, a senha única do dashboard podia ser testada sem limite nenhum. Detalhes em [06-modulo-api.md](06-modulo-api.md#login-mutation). Mesma ressalva do rate limit do Webhook: atrás de um proxy reverso, todos os clientes chegam com o IP do proxy e dividem o mesmo limite — quem colocar o OmniAI atrás de um proxy precisa configurar `ForwardedHeaders` para o IP real do cliente ser usado.
 
 ## Segredos e configuração
 
@@ -90,5 +93,6 @@ Essa é uma extensão da autenticação existente, não uma reescrita — o `Log
 | Força bruta de API Key | Rate limit por IP no Webhook. |
 | Sobrecarga do Consumer/fila (DoS por volume) | Backpressure via `XLEN` rejeita novos eventos além do limite configurado. |
 | Enumeração de credenciais de login | Mensagem de erro genérica no `login`. |
+| Força bruta da senha do dashboard | Limite de tentativas de login por IP + comparação de credenciais em tempo constante. |
 | Payload malformado ou malicioso no Webhook | Validação de schema antes de qualquer processamento ou persistência. |
 | Roubo do JWT via XSS no Cockpit | Aceito como limitação conhecida do MVP (token em `sessionStorage`); mitigação recomendada para produção documentada acima. |

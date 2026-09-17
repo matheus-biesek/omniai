@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { gql } from "graphql-request";
 import { createGraphQLClient } from "../../shared/graphql/client";
+import { extractErrorMessage } from "../../shared/graphql/extractErrorMessage";
 import { useAuth } from "../../app/AuthProvider";
 
 const LOGIN_MUTATION = gql`
@@ -29,8 +30,10 @@ export function useLogin() {
       const response = await client.request<LoginResponse>(LOGIN_MUTATION, { username, password });
       login(response.login.token);
       return true;
-    } catch {
-      setError("Usuário ou senha inválidos.");
+    } catch (err) {
+      // A API ja devolve mensagem generica para credencial errada; aqui so repassa - inclusive o
+      // aviso de muitas tentativas, que nao pode aparecer como "senha invalida".
+      setError(extractErrorMessage(err, "Usuário ou senha inválidos."));
       return false;
     } finally {
       setLoading(false);

@@ -67,6 +67,8 @@ mutation {
 - Valida as credenciais recebidas contra **usuário e senha fixos, definidos em variável de ambiente** — não há tabela de usuários, não há fluxo de cadastro ou troca de senha.
 - Em caso de sucesso, retorna um **JWT** de curta duração, usado nas demais operações (header `Authorization: Bearer`) e na conexão do SignalR.
 - Em caso de falha, retorna erro genérico (não indica se foi o usuário ou a senha que estava incorreta), para não facilitar enumeração de credenciais.
+- A comparação de usuário e senha é de **tempo constante** (hash SHA-256 dos dois lados + `CryptographicOperations.FixedTimeEquals`, sem curto-circuito entre usuário e senha): o tempo de resposta não revela se o usuário estava certo nem quanto da senha bate.
+- **Limite de tentativas por IP** (`LoginRateLimit:PermitLimit` por `LoginRateLimit:WindowSeconds`, padrão 10 por 60s, janela fixa). Toda tentativa conta, certa ou errada, e o limite é checado **antes** das credenciais — durante o bloqueio, até a senha certa é recusada com `"Muitas tentativas de login. Aguarde um minuto e tente novamente."`; do contrário, quem está chutando senhas continuaria descobrindo quando acertou. O limite é aplicado dentro do `LoginUseCase` (`ILoginAttemptLimiter`), não pelo middleware de rate limit do ASP.NET Core: o GraphQL tem um único endpoint, e limitar o `/graphql` inteiro travaria o dashboard, que dispara uma query a cada tecla digitada no filtro.
 
 ### `usageStatistics` (query)
 

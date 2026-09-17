@@ -84,14 +84,29 @@ public class ApiGraphQLUseCaseTests
         IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(signingKey)),
     };
 
+    private sealed class FakeLoginAttemptLimiter : ILoginAttemptLimiter
+    {
+        public bool Allow { get; set; } = true;
+        public List<string> Keys { get; } = new();
+
+        public bool TryAcquire(string clientKey)
+        {
+            Keys.Add(clientKey);
+            return Allow;
+        }
+    }
+
+    private readonly FakeLoginAttemptLimiter _limiter = new();
+
     private LoginUseCase Login() => new(
         Options.Create(new DashboardCredentialsOptions { Username = "admin", Password = "admin-dev-password" }),
-        Generator());
+        Generator(),
+        _limiter);
 
     [Fact]
     public void Login_CredenciaisCorretas_EmiteJwtValidoParaApiEConsumer()
     {
-        var token = Login().Executar("admin", "admin-dev-password");
+        var token = Login().Executar("admin", "admin-dev-password", "10.0.0.1");
 
         var principal = new JwtSecurityTokenHandler().ValidateToken(token, ValidationParameters(), out var validated);
 
@@ -106,11 +121,60 @@ public class ApiGraphQLUseCaseTests
     [InlineData("root", "admin-dev-password")]
     [InlineData("", "")]
     [InlineData("ADMIN", "admin-dev-password")]
+    [InlineData("admin", "admin-dev-password ")]
+    [InlineData("admin", "admin-dev-passwor")]
+    [InlineData("admin", "admin-dev-password-e-mais-um-pouco")]
     public void Login_CredenciaisErradas_LancaMesmaMensagemGenerica(string user, string pass)
     {
-        var ex = Assert.Throws<InvalidCredentialsException>(() => Login().Executar(user, pass));
+        var ex = Assert.Throws<InvalidCredentialsException>(() => Login().Executar(user, pass, "10.0.0.1"));
 
         Assert.Equal("Usuário ou senha inválidos.", ex.Message);
+    }
+
+    [Fact]
+    public void Login_ConsomeUmaTentativaPorChamada_ComAChaveDoCliente()
+    {
+        Login().Executar("admin", "admin-dev-password", "10.0.0.1");
+        Assert.Throws<InvalidCredentialsException>(() => Login().Executar("admin", "errada", "10.0.0.2"));
+
+        Assert.Equal(new[] { "10.0.0.1", "10.0.0.2" }, _limiter.Keys);
+    }
+
+    [Fact]
+    public void Login_LimiteAtingido_BloqueiaMesmoComSenhaCerta()
+    {
+        _limiter.Allow = false;
+
+        var ex = Assert.Throws<TooManyLoginAttemptsException>(() => Login().Executar("admin", "admin-dev-password", "10.0.0.1"));
+
+        Assert.Equal("Muitas tentativas de login. Aguarde um minuto e tente novamente.", ex.Message);
+    }
+
+    [Fact]
+    public void LimitadorDeLogin_PermiteAteOLimite_DepoisBloqueia_PorCliente()
+    {
+        using var limiter = new FixedWindowLoginAttemptLimiter(Options.Create(new LoginRateLimitOptions { PermitLimit = 3, WindowSeconds = 60 }));
+
+        Assert.True(limiter.TryAcquire("a"));
+        Assert.True(limiter.TryAcquire("a"));
+        Assert.True(limiter.TryAcquire("a"));
+        Assert.False(limiter.TryAcquire("a"));
+        Assert.False(limiter.TryAcquire("a"));
+
+        Assert.True(limiter.TryAcquire("b"));
+    }
+
+    [Fact]
+    public async Task LimitadorDeLogin_LiberaDeNovoQuandoAJanelaVira()
+    {
+        using var limiter = new FixedWindowLoginAttemptLimiter(Options.Create(new LoginRateLimitOptions { PermitLimit = 1, WindowSeconds = 1 }));
+
+        Assert.True(limiter.TryAcquire("a"));
+        Assert.False(limiter.TryAcquire("a"));
+
+        await Task.Delay(TimeSpan.FromMilliseconds(1300));
+
+        Assert.True(limiter.TryAcquire("a"));
     }
 
     [Fact]

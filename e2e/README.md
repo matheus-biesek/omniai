@@ -27,10 +27,11 @@ Os arquivos rodam em ordem numérica e um de cada vez:
 | `04-sdk` | SDK real contra um servidor fake da OpenAI (`OPENAI_BASE_URL`) |
 | `05-browser` | Cockpit no Chrome headless: login, projetos, dashboard, tempo real, revogação, logout |
 | `06-resilience` | **Para e religa o container `omniai-consumer`**; réplica em standby |
+| `98-login-ratelimit` | Esgota as tentativas de login do IP na API — por **60s** depois disso, o login fica bloqueado para a sua máquina |
 | `99-ratelimit` | Esgota o rate limit por IP do Webhook — por **60s** depois disso, o Webhook recusa requisições da sua máquina |
 
 ## Observações
 
 - Os testes criam projetos com nomes únicos (`pipeline-<timestamp>`, `sdk-<timestamp>`...) no banco do ambiente local e não os apagam — o sistema não tem exclusão de projeto. Para zerar: `docker compose down -v && docker compose up -d --build`.
-- Para rodar de novo logo em seguida, espere 60s por causa do `99-ratelimit`.
+- Para rodar de novo logo em seguida, espere 60s por causa do `98-login-ratelimit` e do `99-ratelimit`. O token de login fica em cache num arquivo temporário (`omniai-e2e-token.json`) para os arquivos não gastarem tentativas de login à toa.
 - Os testes de integração .NET (`OmniAI/Tests`, categoria `Integration`) também usam o Postgres/Redis do compose, mas num banco próprio (`omniai_tests`) — esses não tocam nos dados do ambiente.
