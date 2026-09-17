@@ -8,5 +8,6 @@
   <Project Path="Consumer/Consumer.csproj" Id="63a12bda-2851-4a54-88db-b8fe794929ff" />
   <Project Path="Migrator/Migrator.csproj" />
   <Project Path="Shared/Shared.csproj" Id="7fa4c680-0259-4b89-b4fa-ed81efb2c062" />
+  <Project Path="Tests/Tests.csproj" />
   <Project Path="Webhook/Webhook.csproj" />
 </Solution>
